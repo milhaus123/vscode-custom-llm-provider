@@ -116,6 +116,18 @@ Maximum delay capped at 10 seconds. Request cancellation is never retried.
 
 ---
 
+## Troubleshooting
+
+### Agent mode loops / repeating the same actions
+
+If the model keeps calling the same tools repeatedly during analysis:
+
+- **Thinking mode tokens** — Qwen3 models emit `<think>…</think>` reasoning blocks by default. The extension automatically filters these from the visible stream, keeping your chat clean and the context shorter.
+- **Long context** — Deep codebase analysis can exhaust the model's context window. Try splitting the task into smaller steps or use a model with `maxInputTokens: 131072`.
+- **Max iterations** — VS Code limits agent loop iterations via `github.copilot.chat.agent.maxRequests` (default 15). You can raise it in Settings if needed.
+
+---
+
 ## Author
 
 **Martin Říha**  

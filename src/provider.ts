@@ -240,6 +240,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
       model: model.id,
       messages: toOpenAIMessages(messages),
       stream: true,
+      max_tokens: model.maxOutputTokens,
       ...(tools && tools.length > 0 ? { tools } : {}),
     });
 
@@ -279,6 +280,13 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     // key = index (0, 1, 2…), value = accumulated call data
     const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
 
+    // State machine for filtering <think>...</think> blocks (Qwen3 extended thinking).
+    // 'detect' = waiting to see whether stream starts with <think>;
+    // 'skip'   = inside a think block, discarding content until </think>;
+    // 'pass'   = normal content, pass directly to progress.
+    let thinkState: 'detect' | 'skip' | 'pass' = 'detect';
+    let thinkBuf = '';
+
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -312,10 +320,43 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
             const choice = chunk.choices[0];
             if (!choice) continue;
 
-            // Text content
+            // Text content — filter out <think>…</think> blocks emitted by Qwen3
             const content = choice.delta?.content;
             if (content) {
-              progress.report(new vscode.LanguageModelTextPart(content));
+              if (thinkState === 'pass') {
+                progress.report(new vscode.LanguageModelTextPart(content));
+              } else {
+                thinkBuf += content;
+                if (thinkState === 'detect') {
+                  const trimmed = thinkBuf.trimStart();
+                  if (trimmed.startsWith('<think>')) {
+                    thinkState = 'skip';
+                    thinkBuf = trimmed.slice('<think>'.length);
+                  } else if (trimmed.length > 0 && !('<think>'.startsWith(trimmed.slice(0, 7)))) {
+                    // Definitely not a <think> block — emit buffered content and switch to pass
+                    thinkState = 'pass';
+                    progress.report(new vscode.LanguageModelTextPart(thinkBuf));
+                    thinkBuf = '';
+                  } else if (thinkBuf.length > 30) {
+                    // Safety: too much buffering without deciding — emit and pass through
+                    thinkState = 'pass';
+                    progress.report(new vscode.LanguageModelTextPart(thinkBuf));
+                    thinkBuf = '';
+                  }
+                } else { // 'skip'
+                  const endIdx = thinkBuf.indexOf('</think>');
+                  if (endIdx !== -1) {
+                    thinkState = 'pass';
+                    // Strip leading newlines that models often add after </think>
+                    const after = thinkBuf.slice(endIdx + '</think>'.length).replace(/^\n{1,2}/, '');
+                    thinkBuf = '';
+                    if (after) progress.report(new vscode.LanguageModelTextPart(after));
+                  } else if (thinkBuf.length > 200) {
+                    // Keep only the tail so we can still detect </think> split across chunks
+                    thinkBuf = thinkBuf.slice(-20);
+                  }
+                }
+              }
             }
 
             // Tool call chunks — accumulate by index
