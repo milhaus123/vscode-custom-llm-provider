@@ -88,21 +88,27 @@ Type `@qwen` in Copilot Chat to always route to your custom model, regardless of
 
 ### Default models
 
+All models available in [Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index) are pre-configured out of the box:
+
+| Model ID | Display Name | Provider |
+|----------|-------------|----------|
+| `qwen3-coder-plus` | Qwen3 Coder Plus | Alibaba |
+| `qwen3-coder-next` | Qwen3 Coder Next | Alibaba |
+| `qwen3-max-2026-01-23` | Qwen3 Max | Alibaba |
+| `qwen3.5-plus` | Qwen3.5 Plus | Alibaba |
+| `qwen3.6-plus` | Qwen3.6 Plus | Alibaba |
+| `glm-5` | GLM-5 | Zhipu |
+| `glm-4.7` | GLM-4.7 | Zhipu |
+| `kimi-k2.5` | Kimi K2.5 | Moonshot |
+| `MiniMax-M2.5` | MiniMax M2.5 | MiniMax |
+
+### Add or override models
+
 ```json
 "customLlm.models": [
-  { "id": "qwen3-coder-plus",     "name": "Qwen3 Coder Plus", "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-  { "id": "qwen3-coder-next",     "name": "Qwen3 Coder Next", "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-  { "id": "qwen3-max-2026-01-23", "name": "Qwen3 Max",        "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-  { "id": "qwen3.5-plus",         "name": "Qwen3.5 Plus",     "maxInputTokens": 131072, "maxOutputTokens": 8192 }
-]
-```
-
-### Add your own models
-
-```json
-"customLlm.models": [
-  { "id": "kimi-k2.5", "name": "Kimi K2.5", "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-  { "id": "glm-4.7",   "name": "GLM-4.7",   "maxInputTokens": 131072, "maxOutputTokens": 8192 }
+  { "id": "qwen3-coder-plus", "name": "Qwen3 Coder Plus", "maxInputTokens": 131072, "maxOutputTokens": 8192 },
+  { "id": "kimi-k2.5",        "name": "Kimi K2.5",        "maxInputTokens": 131072, "maxOutputTokens": 8192 },
+  { "id": "glm-4.7",          "name": "GLM-4.7",          "maxInputTokens": 131072, "maxOutputTokens": 8192 }
 ]
 ```
 
