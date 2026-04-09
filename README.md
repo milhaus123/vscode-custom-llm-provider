@@ -3,9 +3,23 @@
 Connect any **OpenAI-compatible** AI endpoint to GitHub Copilot Chat in Visual Studio Code.  
 Works out of the box with **Alibaba DashScope (Qwen)**, OpenRouter, and any other OpenAI-compatible API.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.104%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
+[![Version](https://img.shields.io/badge/version-0.2.9-brightgreen)](CHANGELOG.md)
+
 ---
 
-## Features
+## 🎯 Primary Use Case — Alibaba Cloud Coding Plan
+
+This extension was developed primarily to bring **[Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index)** into Visual Studio Code.
+
+Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder** models in full agent mode — editing files, running tests, searching your codebase — all from within GitHub Copilot Chat. This extension bridges the gap by exposing those models directly in the VS Code model picker.
+
+![Alibaba Cloud Coding Plan](images/alibaba-coding-plan.svg)
+
+---
+
+## ✨ Features
 
 - Models appear directly in the **Copilot Chat model picker** — no extra setup
 - **`@qwen` chat participant** — invoke your custom models anywhere in Copilot Chat
@@ -17,7 +31,7 @@ Works out of the box with **Alibaba DashScope (Qwen)**, OpenRouter, and any othe
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### 1. Configure your endpoint
 
@@ -28,11 +42,17 @@ Open **User Settings JSON** (`Ctrl+Shift+P` → `Open User Settings (JSON)`) and
 "customLlm.apiKey": "sk-YOUR-API-KEY-HERE"
 ```
 
+![Settings configuration](images/settings.svg)
+
+> **Get your API key** from [Alibaba Cloud Model Studio](https://modelstudio.console.alibabacloud.com) → API Keys section.
+
 ### 2. Pick a model in Copilot Chat
 
 Open Copilot Chat (`Ctrl+Alt+I`) → click the model name → your models appear under **Custom LLM**.
 
 > **First time only:** Open `Ctrl+Shift+P` → **Chat: Manage Language Models** → hover over each model → click the **eye icon 👁** to enable it in the picker.
+
+![Model picker with Custom LLM models](images/model-picker.svg)
 
 ### 3. Use the `@qwen` participant (optional)
 
@@ -43,9 +63,11 @@ Type `@qwen` in Copilot Chat to always route to your custom model, regardless of
 @qwen qwen3-coder-plus refactor this function
 ```
 
+![Using the @qwen chat participant](images/qwen-participant.svg)
+
 ---
 
-## Supported Endpoints
+## 🌐 Supported Endpoints
 
 | Provider | Base URL |
 |----------|----------|
@@ -56,7 +78,7 @@ Type `@qwen` in Copilot Chat to always route to your custom model, regardless of
 
 ---
 
-## Settings
+## ⚙️ Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -86,7 +108,7 @@ Type `@qwen` in Copilot Chat to always route to your custom model, regardless of
 
 ---
 
-## Requirements
+## 📋 Requirements
 
 - Visual Studio Code `1.104.0` or later
 - GitHub Copilot extension installed and signed in (individual plan)
@@ -94,7 +116,7 @@ Type `@qwen` in Copilot Chat to always route to your custom model, regardless of
 
 ---
 
-## Retry Behavior
+## 🔁 Retry Behavior
 
 The extension automatically retries failed requests with **exponential backoff**:
 
@@ -108,33 +130,75 @@ Maximum delay capped at 10 seconds. Request cancellation is never retried.
 
 ---
 
-## Known Limitations
+## ⚠️ Known Limitations
 
-- **GitHub Copilot Coding Plan** (multi-step agent mode) is tied to GitHub's own infrastructure and cannot use custom providers
+- **GitHub Copilot Coding Plan** (GitHub's native multi-step agent mode) is tied to GitHub's own infrastructure and cannot use custom providers. Use [Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index) as a powerful alternative.
 - **Inline completions** (ghost text) are provided by GitHub Copilot and cannot be redirected
 - Models only appear in the picker on **individual GitHub Copilot plans** (not Business/Enterprise)
 
 ---
 
-## Troubleshooting
+## 🛠️ Troubleshooting
 
 ### Agent mode loops / repeating the same actions
 
-If the model keeps calling the same tools repeatedly during analysis:
+If the model keeps calling the same tool in a loop, switch the model to a larger variant — smaller models sometimes struggle with complex multi-step tool orchestration. Try `qwen3-coder-plus` or `qwen3-max` instead of lighter models.
 
-- **Thinking mode tokens** — Qwen3 models emit `<think>…</think>` reasoning blocks by default. The extension automatically filters these from the visible stream, keeping your chat clean and the context shorter.
-- **Long context** — Deep codebase analysis can exhaust the model's context window. Try splitting the task into smaller steps or use a model with `maxInputTokens: 131072`.
-- **Max iterations** — VS Code limits agent loop iterations via `github.copilot.chat.agent.maxRequests` (default 15). You can raise it in Settings if needed.
+### Models don't appear in the picker
+
+1. Open `Ctrl+Shift+P` → **Chat: Manage Language Models**
+2. Hover over each model in the **Custom LLM** section
+3. Click the **eye icon 👁** to make it visible in the picker
+
+If the section doesn't appear at all, check that the extension is active: `Ctrl+Shift+P` → **Extensions: Show Installed Extensions** and verify **Custom LLM Provider** is enabled.
+
+### Requests fail immediately / 401 Unauthorized
+
+Verify your API key is correct. In VS Code run `Ctrl+Shift+P` → **Custom LLM: Configure endpoint & API key** to re-enter the key. Make sure there are no extra spaces around the key.
+
+### Requests fail with 404 or empty responses
+
+Check that the `customLlm.baseUrl` ends with `/v1` and the model `id` values match exactly what your provider expects. For DashScope, use `https://coding-intl.dashscope.aliyuncs.com/v1`.
+
+### Settings changes not taking effect
+
+The extension hot-reloads on settings change, but it may take a few seconds. If models still don't update, reload the VS Code window: `Ctrl+Shift+P` → **Developer: Reload Window**.
 
 ---
 
-## Author
+## 🔨 Building from Source
 
-**Martin Říha**  
-[github.com/milhaus123](https://github.com/milhaus123)
+```bash
+# Clone the repository
+git clone https://github.com/milhaus123/Custom-LLM.git
+cd Custom-LLM
+
+# Install dev dependencies
+npm install
+
+# Compile TypeScript
+npm run compile
+
+# Package as .vsix
+npx vsce package
+
+# Install locally
+code --install-extension vscode-custom-llm-provider-*.vsix
+```
 
 ---
 
-## License
+## 💖 Support the Project
 
-MIT
+If this extension saves you time, consider buying me a coffee!
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=github-sponsors)](https://github.com/sponsors/milhaus123)
+
+Your support helps keep the project maintained and updated with new Qwen model releases. 🙏
+
+---
+
+## 📄 License
+
+[MIT](LICENSE) © 2026 Martin Říha
