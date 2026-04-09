@@ -6,7 +6,7 @@
   "publisher": "MartinRiha",
   "author": {
     "name": "Martin Říha",
-    "url": "https://github.com/Milhaus123"
+    "url": "https://github.com/milhaus123"
   },
   "engines": {
     "vscode": "^1.104.0"
@@ -29,7 +29,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/MartinRiha/vscode-custom-llm-provider"
+    "url": "https://github.com/milhaus123/Custom-LLM"
   },
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",

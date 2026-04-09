@@ -119,7 +119,7 @@ Maximum delay capped at 10 seconds. Request cancellation is never retried.
 ## Author
 
 **Martin Říha**  
-[github.com/MartinRiha](https://github.com/MartinRiha)
+[github.com/milhaus123](https://github.com/milhaus123)
 
 ---
 
