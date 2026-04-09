@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 360" width="680" height="360" font-family="'Consolas', 'Courier New', monospace">
+  <!-- VS Code editor background -->
+  <rect width="680" height="360" fill="#1e1e1e" rx="8"/>
+  <!-- Title bar -->
+  <rect width="680" height="28" fill="#3c3c3c" rx="8"/>
+  <rect y="20" width="680" height="8" fill="#3c3c3c"/>
+  <circle cx="14" cy="14" r="5" fill="#ff5f57"/>
+  <circle cx="30" cy="14" r="5" fill="#febc2e"/>
+  <circle cx="46" cy="14" r="5" fill="#28c840"/>
+  <text x="340" y="18" text-anchor="middle" fill="#cccccc" font-size="12" font-family="'Segoe UI', system-ui, sans-serif">settings.json — User Settings</text>
+
+  <!-- Tab bar -->
+  <rect x="0" y="28" width="680" height="30" fill="#2d2d2d"/>
+  <rect x="0" y="28" width="140" height="30" fill="#1e1e1e"/>
+  <text x="12" y="47" fill="#cccccc" font-size="12" font-family="'Segoe UI', system-ui, sans-serif">settings.json</text>
+  <circle cx="130" cy="43" r="4" fill="#e8a838"/>
+
+  <!-- Line numbers background -->
+  <rect x="0" y="58" width="38" height="302" fill="#1e1e1e"/>
+
+  <!-- Editor content -->
+  <rect x="38" y="58" width="642" height="302" fill="#1e1e1e"/>
+
+  <!-- Line numbers -->
+  <text x="28" y="82" text-anchor="end" fill="#555555" font-size="13">1</text>
+  <text x="28" y="102" text-anchor="end" fill="#555555" font-size="13">2</text>
+  <text x="28" y="122" text-anchor="end" fill="#555555" font-size="13">3</text>
+  <text x="28" y="142" text-anchor="end" fill="#555555" font-size="13">4</text>
+  <text x="28" y="162" text-anchor="end" fill="#555555" font-size="13">5</text>
+  <text x="28" y="182" text-anchor="end" fill="#555555" font-size="13">6</text>
+  <text x="28" y="202" text-anchor="end" fill="#555555" font-size="13">7</text>
+  <text x="28" y="222" text-anchor="end" fill="#555555" font-size="13">8</text>
+  <text x="28" y="242" text-anchor="end" fill="#555555" font-size="13">9</text>
+  <text x="28" y="262" text-anchor="end" fill="#555555" font-size="13">10</text>
+  <text x="28" y="282" text-anchor="end" fill="#555555" font-size="13">11</text>
+  <text x="28" y="302" text-anchor="end" fill="#555555" font-size="13">12</text>
+  <text x="28" y="322" text-anchor="end" fill="#555555" font-size="13">13</text>
+
+  <!-- Code content -->
+  <text x="52" y="82" fill="#d4d4d4" font-size="13">{</text>
+
+  <!-- Line 2: comment -->
+  <text x="52" y="102" fill="#6a9955" font-size="13">  // Custom LLM Provider — Alibaba DashScope (Qwen)</text>
+
+  <!-- Line 3: baseUrl -->
+  <text x="52" y="122" fill="#d4d4d4" font-size="13">  "</text><text x="73" y="122" fill="#9cdcfe" font-size="13">customLlm.baseUrl</text><text x="200" y="122" fill="#d4d4d4" font-size="13">": "</text><text x="223" y="122" fill="#ce9178" font-size="13">https://coding-intl.dashscope.aliyuncs.com/v1</text><text x="534" y="122" fill="#d4d4d4" font-size="13">",</text>
+
+  <!-- Line 4: apiKey -->
+  <text x="52" y="142" fill="#d4d4d4" font-size="13">  "</text><text x="73" y="142" fill="#9cdcfe" font-size="13">customLlm.apiKey</text><text x="192" y="142" fill="#d4d4d4" font-size="13">": "</text><text x="215" y="142" fill="#ce9178" font-size="13">sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</text><text x="490" y="142" fill="#d4d4d4" font-size="13">",</text>
+
+  <!-- Line 5: empty -->
+
+  <!-- Line 6: comment -->
+  <text x="52" y="182" fill="#6a9955" font-size="13">  // Optional: customize models list</text>
+
+  <!-- Line 7: models -->
+  <text x="52" y="202" fill="#d4d4d4" font-size="13">  "</text><text x="73" y="202" fill="#9cdcfe" font-size="13">customLlm.models</text><text x="192" y="202" fill="#d4d4d4" font-size="13">": [</text>
+
+  <!-- Line 8 -->
+  <text x="52" y="222" fill="#d4d4d4" font-size="13">    { "</text><text x="91" y="222" fill="#9cdcfe" font-size="13">id</text><text x="105" y="222" fill="#d4d4d4" font-size="13">": "</text><text x="126" y="222" fill="#ce9178" font-size="13">qwen3-coder-plus</text><text x="241" y="222" fill="#d4d4d4" font-size="13">", "</text><text x="265" y="222" fill="#9cdcfe" font-size="13">name</text><text x="296" y="222" fill="#d4d4d4" font-size="13">": "</text><text x="317" y="222" fill="#ce9178" font-size="13">Qwen3 Coder Plus</text><text x="430" y="222" fill="#d4d4d4" font-size="13">" },</text>
+
+  <!-- Line 9 -->
+  <text x="52" y="242" fill="#d4d4d4" font-size="13">    { "</text><text x="91" y="242" fill="#9cdcfe" font-size="13">id</text><text x="105" y="242" fill="#d4d4d4" font-size="13">": "</text><text x="126" y="242" fill="#ce9178" font-size="13">qwen3-coder-next</text><text x="241" y="242" fill="#d4d4d4" font-size="13">", "</text><text x="265" y="242" fill="#9cdcfe" font-size="13">name</text><text x="296" y="242" fill="#d4d4d4" font-size="13">": "</text><text x="317" y="242" fill="#ce9178" font-size="13">Qwen3 Coder Next</text><text x="430" y="242" fill="#d4d4d4" font-size="13">" },</text>
+
+  <!-- Line 10 -->
+  <text x="52" y="262" fill="#d4d4d4" font-size="13">    { "</text><text x="91" y="262" fill="#9cdcfe" font-size="13">id</text><text x="105" y="262" fill="#d4d4d4" font-size="13">": "</text><text x="126" y="262" fill="#ce9178" font-size="13">qwen3-max-2026-01-23</text><text x="264" y="262" fill="#d4d4d4" font-size="13">", "</text><text x="288" y="262" fill="#9cdcfe" font-size="13">name</text><text x="319" y="262" fill="#d4d4d4" font-size="13">": "</text><text x="340" y="262" fill="#ce9178" font-size="13">Qwen3 Max</text><text x="410" y="262" fill="#d4d4d4" font-size="13">" }</text>
+
+  <!-- Line 11 -->
+  <text x="52" y="282" fill="#d4d4d4" font-size="13">  ],</text>
+
+  <!-- Line 12: empty -->
+
+  <!-- Line 13: close -->
+  <text x="52" y="322" fill="#d4d4d4" font-size="13">}</text>
+
+  <!-- Caption -->
+  <rect x="0" y="334" width="680" height="26" fill="#007acc"/>
+  <text x="340" y="351" text-anchor="middle" fill="#ffffff" font-size="11" font-family="'Segoe UI', system-ui, sans-serif">Add to User Settings JSON (Ctrl+Shift+P → Open User Settings JSON)</text>
+</svg>

@@ -1,0 +1,94 @@
+{
+  "name": "vscode-custom-llm-provider",
+  "displayName": "Custom LLM Provider",
+  "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, …) to GitHub Copilot Chat in VS Code.",
+  "version": "0.1.0",
+  "publisher": "MartinRiha",
+  "author": {
+    "name": "Martin Říha",
+    "url": "https://github.com/milhaus123"
+  },
+  "engines": {
+    "vscode": "^1.104.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "copilot",
+    "llm",
+    "alibaba",
+    "qwen",
+    "dashscope",
+    "openrouter",
+    "ai",
+    "chat"
+  ],
+  "icon": "icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/milhaus123/Custom-LLM"
+  },
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languageModelChatProviders": [
+      {
+        "vendor": "custom-llm",
+        "displayName": "Custom LLM",
+        "managementCommand": "custom-llm.configure"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "custom-llm.qwen",
+        "name": "qwen",
+        "description": "Chat with your custom LLM (Qwen / DashScope / any OpenAI-compatible endpoint)",
+        "isSticky": true
+      }
+    ],
+    "commands": [
+      {
+        "command": "custom-llm.configure",
+        "title": "Custom LLM: Configure endpoint & API key"
+      }
+    ],
+    "configuration": {
+      "title": "Custom LLM Provider",
+      "properties": {
+        "customLlm.baseUrl": {
+          "type": "string",
+          "default": "https://coding-intl.dashscope.aliyuncs.com/v1",
+          "description": "Base URL of the OpenAI-compatible endpoint, e.g. https://coding-intl.dashscope.aliyuncs.com/v1"
+        },
+        "customLlm.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for the endpoint (sk-...). Leave empty if the endpoint does not require authentication."
+        },
+        "customLlm.models": {
+          "type": "array",
+          "default": [
+            { "id": "qwen3-coder-plus",      "name": "Qwen3 Coder Plus",  "maxInputTokens": 131072, "maxOutputTokens": 8192 },
+            { "id": "qwen3-coder-next",       "name": "Qwen3 Coder Next",  "maxInputTokens": 131072, "maxOutputTokens": 8192 },
+            { "id": "qwen3-max-2026-01-23",   "name": "Qwen3 Max",         "maxInputTokens": 131072, "maxOutputTokens": 8192 },
+            { "id": "qwen3.5-plus",           "name": "Qwen3.5 Plus",      "maxInputTokens": 131072, "maxOutputTokens": 8192 }
+          ],
+          "description": "Models to expose in VS Code. Each item: { id, name, maxInputTokens, maxOutputTokens }"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.104.0",
+    "typescript": "^5.4.0"
+  }
+}

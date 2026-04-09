@@ -1,0 +1,6 @@
+src/**
+tsconfig.json
+.vscode/**
+node_modules/**
+FIXES.md
+CHANGELOG.md

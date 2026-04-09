@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 400" width="680" height="400" font-family="'Segoe UI', system-ui, sans-serif">
+  <!-- VS Code dark background -->
+  <rect width="680" height="400" fill="#1e1e1e" rx="8"/>
+  <!-- Title bar -->
+  <rect width="680" height="28" fill="#3c3c3c" rx="8"/>
+  <rect y="20" width="680" height="8" fill="#3c3c3c"/>
+  <text x="340" y="18" text-anchor="middle" fill="#cccccc" font-size="12">GitHub Copilot Chat — @qwen participant</text>
+  <circle cx="14" cy="14" r="5" fill="#ff5f57"/>
+  <circle cx="30" cy="14" r="5" fill="#febc2e"/>
+  <circle cx="46" cy="14" r="5" fill="#28c840"/>
+
+  <!-- Chat panel -->
+  <rect x="0" y="28" width="680" height="372" fill="#252526"/>
+  <rect x="0" y="28" width="680" height="36" fill="#2d2d2d"/>
+  <text x="16" y="51" fill="#cccccc" font-size="13" font-weight="600">GitHub Copilot Chat</text>
+  <text x="600" y="51" fill="#9e9e9e" font-size="12">@qwen ✓</text>
+
+  <!-- User message bubble -->
+  <rect x="160" y="80" width="496" height="56" rx="8" fill="#094771"/>
+  <text x="176" y="100" fill="#4fc3f7" font-size="12" font-weight="700">You</text>
+  <text x="176" y="118" fill="#ffffff" font-size="13">@qwen explain the authentication flow in this codebase</text>
+
+  <!-- AI response -->
+  <rect x="24" y="152" width="500" height="160" rx="8" fill="#2d2d2d"/>
+  <!-- Qwen icon -->
+  <circle cx="44" cy="168" r="10" fill="#ff6a00"/>
+  <text x="44" y="173" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="700">Q</text>
+  <text x="62" y="172" fill="#4fc3f7" font-size="12" font-weight="700">qwen</text>
+  <text x="110" y="172" fill="#555555" font-size="11">· Qwen3 Coder Plus</text>
+
+  <text x="40" y="194" fill="#d4d4d4" font-size="12">The authentication flow uses JWT tokens. Here's how it works:</text>
+  <text x="40" y="214" fill="#d4d4d4" font-size="12">1. User submits credentials → POST /api/auth/login</text>
+  <text x="40" y="232" fill="#d4d4d4" font-size="12">2. Server validates against the database and issues a signed JWT</text>
+  <text x="40" y="250" fill="#d4d4d4" font-size="12">3. Client stores the token and sends it as Bearer in Authorization header</text>
+  <text x="40" y="270" fill="#d4d4d4" font-size="12">4. Middleware (</text>
+  <rect x="134" y="258" width="110" height="16" rx="3" fill="#1e1e1e"/>
+  <text x="138" y="270" fill="#ce9178" font-size="12">src/middleware/auth.ts</text>
+  <text x="250" y="270" fill="#d4d4d4" font-size="12">) validates each request</text>
+  <text x="40" y="296" fill="#d4d4d4" font-size="12">Want me to show the specific implementation in </text>
+  <rect x="340" y="284" width="120" height="16" rx="3" fill="#1e1e1e"/>
+  <text x="344" y="296" fill="#9cdcfe" font-size="12">AuthController.ts</text>
+  <text x="466" y="296" fill="#d4d4d4" font-size="12">?</text>
+
+  <!-- Second user message -->
+  <rect x="200" y="330" width="456" height="36" rx="8" fill="#094771"/>
+  <text x="216" y="352" fill="#ffffff" font-size="13">@qwen qwen3-coder-plus refactor the login function</text>
+
+  <!-- Input box -->
+  <rect x="8" y="372" width="640" height="0" rx="4" fill="#3c3c3c" stroke="#555555" stroke-width="1"/>
+
+  <!-- Caption -->
+  <rect x="0" y="374" width="680" height="26" fill="#007acc"/>
+  <text x="340" y="391" text-anchor="middle" fill="#ffffff" font-size="11">Use @qwen to always route to your custom model — supports agent mode, /fix, /edit, @workspace</text>
+</svg>

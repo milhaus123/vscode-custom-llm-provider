@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 420" width="680" height="420" font-family="'Segoe UI', system-ui, sans-serif">
+  <!-- VS Code dark background -->
+  <rect width="680" height="420" fill="#1e1e1e" rx="8"/>
+
+  <!-- Title bar -->
+  <rect width="680" height="28" fill="#3c3c3c" rx="8"/>
+  <rect y="20" width="680" height="8" fill="#3c3c3c"/>
+  <text x="340" y="18" text-anchor="middle" fill="#cccccc" font-size="12">Visual Studio Code</text>
+  <!-- traffic lights -->
+  <circle cx="14" cy="14" r="5" fill="#ff5f57"/>
+  <circle cx="30" cy="14" r="5" fill="#febc2e"/>
+  <circle cx="46" cy="14" r="5" fill="#28c840"/>
+
+  <!-- Copilot Chat panel background -->
+  <rect x="0" y="28" width="680" height="392" fill="#252526"/>
+
+  <!-- Panel header -->
+  <rect x="0" y="28" width="680" height="36" fill="#2d2d2d"/>
+  <text x="16" y="51" fill="#cccccc" font-size="13" font-weight="600">GitHub Copilot Chat</text>
+
+  <!-- Model picker button - highlighted -->
+  <rect x="430" y="34" width="230" height="24" fill="#094771" rx="4" stroke="#007acc" stroke-width="1"/>
+  <text x="445" y="50" fill="#4fc3f7" font-size="12">⊞ Model: </text>
+  <text x="510" y="50" fill="#ffffff" font-size="12" font-weight="600">Qwen3 Coder Plus</text>
+  <text x="645" y="50" fill="#4fc3f7" font-size="12">▾</text>
+
+  <!-- Dropdown panel -->
+  <rect x="330" y="62" width="335" height="290" fill="#2d2d2d" rx="6" stroke="#454545" stroke-width="1"/>
+  <text x="346" y="82" fill="#9e9e9e" font-size="11">Select a model</text>
+
+  <!-- Section: Custom LLM -->
+  <rect x="330" y="90" width="335" height="22" fill="#1e1e1e"/>
+  <text x="346" y="105" fill="#4fc3f7" font-size="11" font-weight="700" letter-spacing="0.5">CUSTOM LLM</text>
+
+  <!-- Model rows -->
+  <!-- Qwen3 Coder Plus - selected -->
+  <rect x="330" y="112" width="335" height="30" fill="#094771"/>
+  <circle cx="350" cy="127" r="5" fill="#4fc3f7"/>
+  <text x="364" y="131" fill="#ffffff" font-size="13" font-weight="600">Qwen3 Coder Plus</text>
+  <text x="610" y="131" fill="#4fc3f7" font-size="11">✓</text>
+
+  <rect x="330" y="142" width="335" height="30" fill="transparent"/>
+  <rect x="330" y="142" width="335" height="30" fill="#2d2d2d"/>
+  <circle cx="350" cy="157" r="5" fill="#9e9e9e"/>
+  <text x="364" y="161" fill="#cccccc" font-size="13">Qwen3 Coder Next</text>
+
+  <rect x="330" y="172" width="335" height="30" fill="#2d2d2d"/>
+  <circle cx="350" cy="187" r="5" fill="#9e9e9e"/>
+  <text x="364" y="191" fill="#cccccc" font-size="13">Qwen3 Max</text>
+
+  <rect x="330" y="202" width="335" height="30" fill="#2d2d2d"/>
+  <circle cx="350" cy="217" r="5" fill="#9e9e9e"/>
+  <text x="364" y="221" fill="#cccccc" font-size="13">Qwen3.5 Plus</text>
+
+  <!-- Separator -->
+  <line x1="330" y1="232" x2="665" y2="232" stroke="#454545" stroke-width="1"/>
+
+  <!-- Section: GitHub Copilot -->
+  <rect x="330" y="232" width="335" height="22" fill="#1e1e1e"/>
+  <text x="346" y="247" fill="#9e9e9e" font-size="11" font-weight="700" letter-spacing="0.5">GITHUB COPILOT</text>
+
+  <rect x="330" y="254" width="335" height="30" fill="#2d2d2d"/>
+  <circle cx="350" cy="269" r="5" fill="#9e9e9e"/>
+  <text x="364" y="273" fill="#9e9e9e" font-size="13">GPT-4o</text>
+
+  <rect x="330" y="284" width="335" height="30" fill="#2d2d2d"/>
+  <circle cx="350" cy="299" r="5" fill="#9e9e9e"/>
+  <text x="364" y="303" fill="#9e9e9e" font-size="13">Claude Sonnet 4.5</text>
+
+  <rect x="330" y="314" width="335" height="30" fill="#2d2d2d"/>
+  <circle cx="350" cy="329" r="5" fill="#9e9e9e"/>
+  <text x="364" y="333" fill="#9e9e9e" font-size="13">Gemini 2.0 Flash</text>
+
+  <!-- Manage models hint -->
+  <rect x="330" y="344" width="335" height="8" fill="#1e1e1e"/>
+  <line x1="330" y1="352" x2="665" y2="352" stroke="#454545" stroke-width="1"/>
+  <text x="346" y="366" fill="#9e9e9e" font-size="11">Chat: Manage Language Models...</text>
+
+  <!-- Chat area (left) -->
+  <rect x="8" y="68" width="312" height="240" rx="4" fill="#1e1e1e"/>
+  <text x="164" y="190" text-anchor="middle" fill="#555555" font-size="12">Ask Copilot a question</text>
+
+  <!-- Chat input -->
+  <rect x="8" y="318" width="312" height="36" rx="4" fill="#3c3c3c" stroke="#555555" stroke-width="1"/>
+  <text x="20" y="340" fill="#9e9e9e" font-size="12">Ask Copilot... (using Qwen3 Coder Plus)</text>
+
+  <!-- Caption -->
+  <rect x="0" y="388" width="680" height="32" fill="#007acc"/>
+  <text x="340" y="408" text-anchor="middle" fill="#ffffff" font-size="12">Custom LLM models appear directly in the Copilot Chat model picker</text>
+</svg>
