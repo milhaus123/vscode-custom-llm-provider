@@ -192,7 +192,7 @@ code --install-extension vscode-custom-llm-provider-*.vsix
 
 If this extension saves you time, consider buying me a coffee!
 
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=github-sponsors)](https://github.com/sponsors/milhaus123)
 
 Your support helps keep the project maintained and updated with new Qwen model releases. 🙏
