@@ -158,9 +158,15 @@ If the model keeps calling the same tool in a loop, switch the model to a larger
 
 If the section doesn't appear at all, check that the extension is active: `Ctrl+Shift+P` → **Extensions: Show Installed Extensions** and verify **Custom LLM Provider** is enabled.
 
-### Requests fail immediately / 401 Unauthorized
+### 401 Unauthorized — "invalid access token or token expired"
 
-Verify your API key is correct. In VS Code run `Ctrl+Shift+P` → **Custom LLM: Configure endpoint & API key** to re-enter the key. Make sure there are no extra spaces around the key.
+This means your API key is missing or incorrect. Fix:
+
+1. Open `Ctrl+Shift+P` → **Custom LLM: Configure endpoint & API key**
+2. Paste your API key (starts with `sk-`)
+3. Make sure there are no extra spaces around the key
+
+Get your key from [Alibaba Cloud Model Studio](https://modelstudio.console.alibabacloud.com) → **API Keys** section. Note that Coding Plan API keys are separate from regular DashScope keys.
 
 ### Requests fail with 404 or empty responses
 

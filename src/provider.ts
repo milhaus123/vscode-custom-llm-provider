@@ -144,6 +144,14 @@ async function fetchWithRetry(
       const status = response.status;
       const errorBody = await response.text().catch(() => 'Unknown error');
       
+      if (status === 401) {
+        throw new Error(
+          'Custom LLM: Invalid or missing API key.\n' +
+          'Run the command "Custom LLM: Configure endpoint & API key" (Ctrl+Shift+P) to set your API key.\n' +
+          `Details: ${errorBody}`
+        );
+      }
+
       if (!isRetryableError(status)) {
         throw new Error(`Custom LLM (${status}): ${errorBody}`);
       }
