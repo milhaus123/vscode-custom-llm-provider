@@ -2,7 +2,7 @@
   "name": "vscode-custom-llm-provider",
   "displayName": "Custom LLM Provider",
   "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, ) to GitHub Copilot Chat in VS Code.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "MartinRiha",
   "author": {
     "name": "Martin Riha",
@@ -29,7 +29,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/milhaus123/Custom-LLM"
+    "url": "https://github.com/milhaus123/vscode-custom-llm-provider"
   },
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
@@ -71,15 +71,15 @@
         "customLlm.models": {
           "type": "array",
           "default": [
-            { "id": "qwen3-coder-plus",      "name": "Qwen3 Coder Plus",   "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-            { "id": "qwen3-coder-next",      "name": "Qwen3 Coder Next",   "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-            { "id": "qwen3-max-2026-01-23",  "name": "Qwen3 Max",          "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-            { "id": "qwen3.5-plus",          "name": "Qwen3.5 Plus",       "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-            { "id": "qwen3.6-plus",          "name": "Qwen3.6 Plus",       "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-            { "id": "glm-5",                 "name": "GLM-5",              "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-            { "id": "glm-4.7",               "name": "GLM-4.7",            "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-            { "id": "kimi-k2.5",             "name": "Kimi K2.5",          "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-            { "id": "MiniMax-M2.5",          "name": "MiniMax M2.5",       "maxInputTokens": 131072, "maxOutputTokens": 8192 }
+            { "id": "qwen3-coder-plus",     "name": "Qwen3 Coder Plus",  "maxInputTokens": 131072,  "maxOutputTokens": 8192  },
+            { "id": "qwen3-coder-next",     "name": "Qwen3 Coder Next",  "maxInputTokens": 131072,  "maxOutputTokens": 8192  },
+            { "id": "qwen3-max-2026-01-23", "name": "Qwen3 Max",         "maxInputTokens": 131072,  "maxOutputTokens": 8192  },
+            { "id": "qwen3.5-plus",         "name": "Qwen3.5 Plus",      "maxInputTokens": 1000000, "maxOutputTokens": 16384 },
+            { "id": "qwen3.6-plus",         "name": "Qwen3.6 Plus",      "maxInputTokens": 1000000, "maxOutputTokens": 65536 },
+            { "id": "glm-5",                "name": "GLM-5",             "maxInputTokens": 204800,  "maxOutputTokens": 16384 },
+            { "id": "glm-4.7",              "name": "GLM-4.7",           "maxInputTokens": 131072,  "maxOutputTokens": 8192  },
+            { "id": "kimi-k2.5",            "name": "Kimi K2.5",         "maxInputTokens": 262144,  "maxOutputTokens": 32768 },
+            { "id": "MiniMax-M2.5",         "name": "MiniMax M2.5",      "maxInputTokens": 262144,  "maxOutputTokens": 8192  }
           ],
           "description": "Models to expose in VS Code. Each item: { id, name, maxInputTokens, maxOutputTokens }"
         }

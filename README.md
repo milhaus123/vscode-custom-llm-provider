@@ -5,7 +5,7 @@ Works out of the box with **Alibaba DashScope (Qwen)**, OpenRouter, and any othe
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.2.9-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.0-brightgreen)](CHANGELOG.md)
 
 ---
 
@@ -90,25 +90,25 @@ Type `@qwen` in Copilot Chat to always route to your custom model, regardless of
 
 All models available in [Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index) are pre-configured out of the box:
 
-| Model ID | Display Name | Provider |
-|----------|-------------|----------|
-| `qwen3-coder-plus` | Qwen3 Coder Plus | Alibaba |
-| `qwen3-coder-next` | Qwen3 Coder Next | Alibaba |
-| `qwen3-max-2026-01-23` | Qwen3 Max | Alibaba |
-| `qwen3.5-plus` | Qwen3.5 Plus | Alibaba |
-| `qwen3.6-plus` | Qwen3.6 Plus | Alibaba |
-| `glm-5` | GLM-5 | Zhipu |
-| `glm-4.7` | GLM-4.7 | Zhipu |
-| `kimi-k2.5` | Kimi K2.5 | Moonshot |
-| `MiniMax-M2.5` | MiniMax M2.5 | MiniMax |
+| Model ID | Display Name | Provider | Context |
+|----------|-------------|----------|---------|
+| `qwen3-coder-plus` | Qwen3 Coder Plus | Alibaba | 128K |
+| `qwen3-coder-next` | Qwen3 Coder Next | Alibaba | 128K |
+| `qwen3-max-2026-01-23` | Qwen3 Max | Alibaba | 128K |
+| `qwen3.5-plus` | Qwen3.5 Plus | Alibaba | 1M |
+| `qwen3.6-plus` | Qwen3.6 Plus | Alibaba | 1M |
+| `glm-5` | GLM-5 | Zhipu | 200K |
+| `glm-4.7` | GLM-4.7 | Zhipu | 128K |
+| `kimi-k2.5` | Kimi K2.5 | Moonshot | 256K |
+| `MiniMax-M2.5` | MiniMax M2.5 | MiniMax | 256K |
 
 ### Add or override models
 
 ```json
 "customLlm.models": [
-  { "id": "qwen3-coder-plus", "name": "Qwen3 Coder Plus", "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-  { "id": "kimi-k2.5",        "name": "Kimi K2.5",        "maxInputTokens": 131072, "maxOutputTokens": 8192 },
-  { "id": "glm-4.7",          "name": "GLM-4.7",          "maxInputTokens": 131072, "maxOutputTokens": 8192 }
+  { "id": "qwen3-coder-plus", "name": "Qwen3 Coder Plus", "maxInputTokens": 131072,  "maxOutputTokens": 8192  },
+  { "id": "kimi-k2.5",        "name": "Kimi K2.5",        "maxInputTokens": 262144,  "maxOutputTokens": 32768 },
+  { "id": "glm-4.7",          "name": "GLM-4.7",          "maxInputTokens": 131072,  "maxOutputTokens": 8192  }
 ]
 ```
 
@@ -182,8 +182,8 @@ The extension hot-reloads on settings change, but it may take a few seconds. If 
 
 ```bash
 # Clone the repository
-git clone https://github.com/milhaus123/Custom-LLM.git
-cd Custom-LLM
+git clone https://github.com/milhaus123/vscode-custom-llm-provider.git
+cd vscode-custom-llm-provider
 
 # Install dev dependencies
 npm install
