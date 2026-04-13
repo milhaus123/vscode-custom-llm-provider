@@ -5,7 +5,7 @@ Works out of the box with **Alibaba DashScope (Qwen)**, OpenRouter, and any othe
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.2.0-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-brightgreen)](CHANGELOG.md)
 
 ---
 

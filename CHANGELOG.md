@@ -1,97 +1,132 @@
-# Changelog - v0.1.0
+# Changelog
 
-## 🎯 Hlavní změny
+## v0.3.0 — April 2026
 
-### Odstraněn chat participant (@qwen)
-- **Důvod:** Chyba `mgt.clearMarks is not a function` a duplicitní funkcionalita
-- **Řešení:** Extension nyní používá pouze standardní model picker v Copilot Chat
-- **Výhody:** 
-  - Čistší architektura
-  - Žádné chyby s markdown rendererem
-  - Konzistentní UX s ostatními Copilot extensionmi
+### Added `@qwen` chat participant
+- **New feature:** `@qwen` participant for direct routing of queries to custom LLM
+- **Better UX:** No need to change model picker — just type `@qwen` in chat
+- **Model support:** Automatic model selection based on first word in prompt
 
-### Přidána retry logika pro síťové požadavky
-- **Exponenciální backoff:** 1s → 2s → 4s mezi pokusy
-- **Opakování při:** 
-  - 429 Too Many Requests (rate limit)
-  - 500-504 Server errors
-- **Maximální zpoždění:** 10 sekund
-- **Náhodný jitter:** ±30% pro prevenci hromadných požadavků
-- **Respektování zrušení:** Při stisku "stop" se retry neprovádí
+### Tool calling (agent mode)
+- **`toolCalling: true`** — agent mode, `/fix`, `/edit`, `@workspace` now work
+- Models can call VS Code tools (file reading, editing, running commands)
 
-### Tool Calling podpora (příprava)
-- Přidány typy pro OpenAI function calling
-- Implementováno parsování tool_calls v stream handleru
-- Aktuálně nastaveno `toolCalling: false` 
-- Připraveno pro budoucí implementaci VS Code tool integration
+### Updated models
+- Added `qwen3.6-plus` (1M context, 64K output)
+- Added `glm-5` (200K context)
+- Added `MiniMax-M2.5` (256K context)
+- Updated token limits for all models
 
-## 📦 Technické změny
-
-### Aktualizované závislosti
-```json
-"engines": {
-  "vscode": "^1.94.0"     // bylo: ^1.90.0
-},
-"devDependencies": {
-  "@types/vscode": "^1.94.0"  // bylo: ^1.90.0
-}
-```
-
-### Odstraněné soubory
-- `src/participant.ts` - není potřeba
-- `out/participant.js` - zkompilovaná verze
-- `out/participant.js.map` - source map
-
-### Aktualizované soubory
-- `src/extension.ts` - odstraněna reference na participant
-- `src/provider.ts` - přidána retry logika a tool calling typy
-- `package.json` - odstraněn chatParticipants z contributes
-- `README.md` - aktualizována dokumentace
-- `tsconfig.json` - přidány lepší compiler options
-- `.vscodeignore` - ignorování nepotřebných souborů
-
-### Nové soubory
-- `LICENSE.md` - MIT licence (vyžadováno pro publikaci)
-- `CHANGELOG.md` - tento soubor
-
-## 🐛 Opravené chyby
-
-### v0.0.x
-- `mgt.clearMarks is not a function` - odstraněním participantu
-- Nekonzistentní base URL mezi provider a participant
-- Chybějící retry logika pro production použití
-
-### v0.1.0
-- Všechny známé issues vyřešeny
-
-## 🚀 Jak aktualizovat
-
-```bash
-# Odinstalovat starou verzi
-code --uninstall-extension MartinRiha.vscode-custom-llm-provider
-
-# Nainstalovat novou verzi
-code --install-extension vscode-custom-llm-provider-0.1.0.vsix
-```
-
-## 📝 Poznámky k migraci
-
-Pokud jste používali `@qwen` příkaz v Copilot Chat:
-1. Otevřete Copilot Chat (`Ctrl+Alt+I`)
-2. Klikněte na název modelu v horní části chatu
-3. Vyberte libovolný Qwen model z nabídky
-4. Nyní můžete chatovat přímo s vybraným modelem
-
-## 🔮 Plánované funkce (budoucí verze)
-
-- [ ] Plná tool calling podpora pro VS Code functions
-- [ ] Vlastní tokenizér pro přesnější počítání tokenů
-- [ ] Podpora pro system messages
-- [ ] Konfigurovatelný retry policy v settings
-- [ ] Metrics a telemetry pro monitorování chyb
+### VS Code 1.104+
+- Minimum required version bumped to `^1.104.0`
 
 ---
 
-**Vydané verze:**
-- v0.1.0 (2026-03-31) - Major refactor, retry logic, tool calling准备
+## v0.2.0
+
+### Retry logic fix
+- Fixed exponential backoff implementation
+- Better error handling and edge cases
+
+### Code cleanup
+- Removed unnecessary files and dependencies
+
+---
+
+## v0.1.0
+
+### 🎯 Main Changes
+
+#### Removed chat participant (@qwen)
+- **Reason:** `mgt.clearMarks is not a function` error and duplicate functionality
+- **Solution:** Extension now uses only the standard model picker in Copilot Chat
+- **Benefits:**
+  - Cleaner architecture
+  - No more markdown renderer errors
+  - Consistent UX with other Copilot extensions
+
+#### Added retry logic for network requests
+- **Exponential backoff:** 1s → 2s → 4s between attempts
+- **Retries on:**
+  - 429 Too Many Requests (rate limit)
+  - 500-504 Server errors
+- **Maximum delay:** 10 seconds
+- **Random jitter:** ±30% to prevent thundering herd
+- **Cancellation respected:** No retry when user presses "stop"
+
+#### Tool Calling support (preparation)
+- Added OpenAI function calling types
+- Implemented tool_calls parsing in stream handler
+- Currently set to `toolCalling: false`
+- Ready for future VS Code tool integration
+
+### 📦 Technical Changes
+
+#### Updated dependencies
+```json
+"engines": {
+  "vscode": "^1.94.0"     // was: ^1.90.0
+},
+"devDependencies": {
+  "@types/vscode": "^1.94.0"  // was: ^1.90.0
+}
+```
+
+#### Removed files
+- `src/participant.ts` - no longer needed
+- `out/participant.js` - compiled version
+- `out/participant.js.map` - source map
+
+#### Updated files
+- `src/extension.ts` - removed participant reference
+- `src/provider.ts` - added retry logic and tool calling types
+- `package.json` - removed chatParticipants from contributes
+- `README.md` - updated documentation
+- `tsconfig.json` - added better compiler options
+- `.vscodeignore` - ignore unnecessary files
+
+### New files
+- `LICENSE.md` - MIT license (required for publishing)
+- `CHANGELOG.md` - this file
+
+## 🐛 Bug Fixes
+
+### v0.0.x
+- `mgt.clearMarks is not a function` - removed participant
+- Inconsistent base URL between provider and participant
+- Missing retry logic for production use
+
+### v0.1.0
+- All known issues resolved
+
+## 🚀 How to Update
+
+```bash
+# Uninstall old version
+code --uninstall-extension MartinRiha.vscode-custom-llm-provider
+
+# Install new version
+code --install-extension vscode-custom-llm-provider-0.1.0.vsix
+```
+
+## 📝 Migration Notes
+
+If you were using the `@qwen` command in Copilot Chat:
+1. Open Copilot Chat (`Ctrl+Alt+I`)
+2. Click the model name at the top of the chat
+3. Select any Qwen model from the list
+4. You can now chat directly with the selected model
+
+## 🔮 Planned Features (Future Versions)
+
+- [ ] Full tool calling support for VS Code functions
+- [ ] Custom tokenizer for more accurate token counting
+- [ ] System messages support
+- [ ] Configurable retry policy in settings
+- [ ] Metrics and telemetry for error monitoring
+
+---
+
+**Released versions:**
+- v0.1.0 (2026-03-31) - Major refactor, retry logic, tool calling preparation
 - v0.0.1 (2026-XX-XX) - Initial release

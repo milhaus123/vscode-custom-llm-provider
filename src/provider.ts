@@ -192,7 +192,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     });
   }
 
-  // VS Code volá tuto metodu při discovery modelů
+  // Called by VS Code during model discovery
   provideLanguageModelChatInformation(
     options: vscode.PrepareLanguageModelChatModelOptions,
     _token: vscode.CancellationToken
@@ -219,7 +219,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     }));
   }
 
-  // Response se posílá přes progress.report(), návratová hodnota je void
+  // Response is streamed via progress.report(), return value is void
   async provideLanguageModelChatResponse(
     model: vscode.LanguageModelChatInformation,
     messages: readonly vscode.LanguageModelChatRequestMessage[],
@@ -404,7 +404,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     }
   }
 
-  // Token counting — první parametr je model (ne text!)
+  // Token counting — first parameter is the model (not text!)
   async provideTokenCount(
     _model: vscode.LanguageModelChatInformation,
     text: string | vscode.LanguageModelChatRequestMessage,
