@@ -1,30 +1,18 @@
 {
   "name": "vscode-custom-llm-provider",
   "displayName": "Custom LLM Provider",
-  "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, ) to GitHub Copilot Chat in VS Code.",
-  "version": "0.3.0",
+  "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, …) to GitHub Copilot Chat in VS Code.",
+  "version": "0.4.3",
   "publisher": "MartinRiha",
   "author": {
-    "name": "Martin Riha",
+    "name": "Martin Říha",
     "url": "https://github.com/milhaus123"
   },
   "engines": {
     "vscode": "^1.104.0"
   },
-  "categories": [
-    "AI",
-    "Other"
-  ],
-  "keywords": [
-    "copilot",
-    "llm",
-    "alibaba",
-    "qwen",
-    "dashscope",
-    "openrouter",
-    "ai",
-    "chat"
-  ],
+  "categories": ["AI", "Other"],
+  "keywords": ["copilot", "llm", "alibaba", "qwen", "dashscope", "openrouter", "ai", "chat"],
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
@@ -38,7 +26,7 @@
       {
         "vendor": "custom-llm",
         "displayName": "Custom LLM",
-        "managementCommand": "custom-llm.configure"
+        "managementCommand": "custom-llm.addProvider"
       }
     ],
     "chatParticipants": [
@@ -51,8 +39,12 @@
     ],
     "commands": [
       {
-        "command": "custom-llm.configure",
-        "title": "Custom LLM: Configure endpoint & API key"
+        "command": "custom-llm.addProvider",
+        "title": "Custom LLM: Add provider"
+      },
+      {
+        "command": "custom-llm.manageProviders",
+        "title": "Custom LLM: Manage providers"
       },
       {
         "command": "custom-llm.refreshModels",
@@ -62,30 +54,33 @@
     "configuration": {
       "title": "Custom LLM Provider",
       "properties": {
+        "customLlm.providers": {
+          "type": "array",
+          "default": [],
+          "description": "List of OpenAI-compatible providers. Each item: { name, baseUrl, apiKey }",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name":    { "type": "string", "description": "Display name, e.g. 'Alibaba DashScope'" },
+              "baseUrl": { "type": "string", "description": "Base URL ending with /v1" },
+              "apiKey":  { "type": "string", "description": "API key (sk-...)" }
+            }
+          }
+        },
+        "customLlm.models": {
+          "type": "array",
+          "default": [],
+          "description": "Auto-populated by model discovery. Each item: { id, name, providerUrl, maxInputTokens, maxOutputTokens }"
+        },
         "customLlm.baseUrl": {
           "type": "string",
-          "default": "https://coding-intl.dashscope.aliyuncs.com/v1",
-          "description": "Base URL of the OpenAI-compatible endpoint, e.g. https://coding-intl.dashscope.aliyuncs.com/v1"
+          "default": "",
+          "deprecationMessage": "Replaced by customLlm.providers. Will be migrated automatically."
         },
         "customLlm.apiKey": {
           "type": "string",
           "default": "",
-          "description": "API key for the endpoint (sk-...). Leave empty if the endpoint does not require authentication."
-        },
-        "customLlm.models": {
-          "type": "array",
-          "default": [
-            { "id": "qwen3-coder-plus",     "name": "Qwen3 Coder Plus",  "maxInputTokens": 131072,  "maxOutputTokens": 8192  },
-            { "id": "qwen3-coder-next",     "name": "Qwen3 Coder Next",  "maxInputTokens": 131072,  "maxOutputTokens": 8192  },
-            { "id": "qwen3-max-2026-01-23", "name": "Qwen3 Max",         "maxInputTokens": 131072,  "maxOutputTokens": 8192  },
-            { "id": "qwen3.5-plus",         "name": "Qwen3.5 Plus",      "maxInputTokens": 1000000, "maxOutputTokens": 16384 },
-            { "id": "qwen3.6-plus",         "name": "Qwen3.6 Plus",      "maxInputTokens": 1000000, "maxOutputTokens": 65536 },
-            { "id": "glm-5",                "name": "GLM-5",             "maxInputTokens": 204800,  "maxOutputTokens": 16384 },
-            { "id": "glm-4.7",              "name": "GLM-4.7",           "maxInputTokens": 131072,  "maxOutputTokens": 8192  },
-            { "id": "kimi-k2.5",            "name": "Kimi K2.5",         "maxInputTokens": 262144,  "maxOutputTokens": 32768 },
-            { "id": "MiniMax-M2.5",         "name": "MiniMax M2.5",      "maxInputTokens": 262144,  "maxOutputTokens": 8192  }
-          ],
-          "description": "Models to expose in VS Code. Each item: { id, name, maxInputTokens, maxOutputTokens }"
+          "deprecationMessage": "Replaced by customLlm.providers. Will be migrated automatically."
         }
       }
     }

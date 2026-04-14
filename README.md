@@ -5,7 +5,7 @@ Works out of the box with **Alibaba DashScope (Qwen)**, OpenRouter, and any othe
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.3.0-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.3-brightgreen)](CHANGELOG.md)
 
 ---
 
@@ -23,6 +23,9 @@ Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder
 
 - Models appear directly in the **Copilot Chat model picker** — no extra setup
 - **`@qwen` chat participant** — invoke your custom models anywhere in Copilot Chat
+- **Multi-provider support** — connect Alibaba DashScope, OpenRouter, and any other provider simultaneously, each with its own URL and API key
+- **Dynamic model discovery** — models are fetched automatically from each provider's `/v1/models` endpoint on startup
+- **Image input support** — attach images directly in Copilot Chat (requires a multimodal model such as `qwen-vl-max`)
 - Full streaming support (Server-Sent Events)
 - **Tool calling support** — agent mode, `/fix`, `/edit`, `@workspace` all work
 - **Automatic retry with exponential backoff** for network failures and rate limits
@@ -33,18 +36,21 @@ Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder
 
 ## 🚀 Quick Start
 
-### 1. Configure your endpoint
+### 1. Add your first provider
 
-Open **User Settings JSON** (`Ctrl+Shift+P` → `Open User Settings (JSON)`) and add:
+Open the Command Palette (`Ctrl+Shift+P`) and run **Custom LLM: Add provider**.
 
-```json
-"customLlm.baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1",
-"customLlm.apiKey": "sk-YOUR-API-KEY-HERE"
-```
+The wizard will ask for:
+1. **Provider name** — e.g. `Alibaba DashScope`
+2. **Base URL** — e.g. `https://coding-intl.dashscope.aliyuncs.com/v1`
+3. **API key** — your `sk-…` key
+
+After saving, the extension automatically fetches available models from the provider.
 
 ![Settings configuration](images/settings.png)
 
-> **Get your API key** from [Alibaba Cloud Model Studio](https://modelstudio.console.alibabacloud.com) → API Keys section.
+> **Get your API key** from [Alibaba Cloud Model Studio](https://modelstudio.console.alibabacloud.com) → API Keys section.  
+> Note that Coding Plan API keys are separate from regular DashScope keys.
 
 ### 2. Pick a model in Copilot Chat
 
@@ -78,17 +84,65 @@ Type `@qwen` in Copilot Chat to always route to your custom model, regardless of
 
 ---
 
+## 🔌 Multi-Provider Support
+
+You can connect **multiple providers at once** — for example, use Alibaba DashScope and OpenRouter side by side. Each provider has its own URL and API key; models from all providers are merged into a single list in the Copilot Chat picker.
+
+**Add a provider:**
+```
+Ctrl+Shift+P → Custom LLM: Add provider
+```
+
+**Manage providers (edit / remove):**
+```
+Ctrl+Shift+P → Custom LLM: Manage providers
+```
+
+**Refresh the model list:**
+```
+Ctrl+Shift+P → Custom LLM: Refresh model list from API
+```
+
+---
+
 ## ⚙️ Settings
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `customLlm.baseUrl` | DashScope international | Base URL of the OpenAI-compatible endpoint |
-| `customLlm.apiKey` | _(empty)_ | API key — leave empty if the endpoint does not require authentication |
-| `customLlm.models` | Qwen3 models | List of models to expose in VS Code |
+### Provider configuration
+
+Providers are stored in the `customLlm.providers` array. Each entry has three fields:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Display name shown in info messages (e.g. `"Alibaba DashScope"`) |
+| `baseUrl` | Base URL ending with `/v1` |
+| `apiKey` | API key (`sk-…`). Leave empty if not required. |
+
+You can also edit settings directly in **User Settings JSON** (`Ctrl+Shift+P` → `Open User Settings (JSON)`):
+
+```json
+"customLlm.providers": [
+  {
+    "name": "Alibaba DashScope",
+    "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1",
+    "apiKey": "sk-YOUR-KEY-HERE"
+  },
+  {
+    "name": "OpenRouter",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "apiKey": "sk-or-YOUR-KEY-HERE"
+  }
+]
+```
+
+> **Legacy settings** (`customLlm.baseUrl` and `customLlm.apiKey`) are automatically migrated to the new `customLlm.providers` format on the first startup after updating to v0.4.0. No manual action needed.
+
+### Model list
+
+`customLlm.models` is auto-populated by model discovery and does not normally need to be edited manually. The extension merges discovered models with any existing entries — custom entries are preserved.
 
 ### Default models
 
-All models available in [Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index) are pre-configured out of the box:
+If no providers are configured or the API is unreachable, the extension falls back to these built-in defaults (all available in [Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index)):
 
 | Model ID | Display Name | Provider | Context |
 |----------|-------------|----------|---------|
@@ -102,15 +156,15 @@ All models available in [Alibaba Cloud Coding Plan](https://modelstudio.console.
 | `kimi-k2.5` | Kimi K2.5 | Moonshot | 256K |
 | `MiniMax-M2.5` | MiniMax M2.5 | MiniMax | 256K |
 
-### Add or override models
+---
 
-```json
-"customLlm.models": [
-  { "id": "qwen3-coder-plus", "name": "Qwen3 Coder Plus", "maxInputTokens": 131072,  "maxOutputTokens": 8192  },
-  { "id": "kimi-k2.5",        "name": "Kimi K2.5",        "maxInputTokens": 262144,  "maxOutputTokens": 32768 },
-  { "id": "glm-4.7",          "name": "GLM-4.7",          "maxInputTokens": 131072,  "maxOutputTokens": 8192  }
-]
-```
+## 🛠️ Commands
+
+| Command | Description |
+|---------|-------------|
+| `Custom LLM: Add provider` | Guided wizard to add a new provider (name → URL → API key → auto-discover models) |
+| `Custom LLM: Manage providers` | List, edit, or remove configured providers |
+| `Custom LLM: Refresh model list from API` | Manually re-fetch models from all configured providers |
 
 ---
 
@@ -148,7 +202,7 @@ Maximum delay capped at 10 seconds. Request cancellation is never retried.
 
 ### Agent mode loops / repeating the same actions
 
-If the model keeps calling the same tool in a loop, switch the model to a larger variant — smaller models sometimes struggle with complex multi-step tool orchestration. Try `qwen3-coder-plus` or `qwen3-max` instead of lighter models.
+If the model keeps calling the same tool in a loop, switch to a larger variant — smaller models sometimes struggle with complex multi-step tool orchestration. Try `qwen3-coder-plus` or `qwen3-max` instead of lighter models.
 
 ### Models don't appear in the picker
 
@@ -158,23 +212,34 @@ If the model keeps calling the same tool in a loop, switch the model to a larger
 
 If the section doesn't appear at all, check that the extension is active: `Ctrl+Shift+P` → **Extensions: Show Installed Extensions** and verify **Custom LLM Provider** is enabled.
 
+To force a model refresh: `Ctrl+Shift+P` → **Custom LLM: Refresh model list from API**.
+
 ### 401 Unauthorized — "invalid access token or token expired"
 
-This means your API key is missing or incorrect. Fix:
+Your API key is missing or incorrect. Fix:
 
-1. Open `Ctrl+Shift+P` → **Custom LLM: Configure endpoint & API key**
-2. Paste your API key (starts with `sk-`)
-3. Make sure there are no extra spaces around the key
+1. Open `Ctrl+Shift+P` → **Custom LLM: Manage providers**
+2. Select your provider → **Edit**
+3. Paste your API key (starts with `sk-`)
+4. Make sure there are no extra spaces around the key
 
-Get your key from [Alibaba Cloud Model Studio](https://modelstudio.console.alibabacloud.com) → **API Keys** section. Note that Coding Plan API keys are separate from regular DashScope keys.
+Get your key from [Alibaba Cloud Model Studio](https://modelstudio.console.alibabacloud.com) → **API Keys** section.
 
 ### Requests fail with 404 or empty responses
 
-Check that the `customLlm.baseUrl` ends with `/v1` and the model `id` values match exactly what your provider expects. For DashScope, use `https://coding-intl.dashscope.aliyuncs.com/v1`.
+Check that the `baseUrl` ends with `/v1` and the model `id` values match exactly what your provider expects. For DashScope, use `https://coding-intl.dashscope.aliyuncs.com/v1`.
 
 ### Settings changes not taking effect
 
 The extension hot-reloads on settings change, but it may take a few seconds. If models still don't update, reload the VS Code window: `Ctrl+Shift+P` → **Developer: Reload Window**.
+
+### Image attachment returns an error
+
+Not all models support image input. If you see `"This model does not support image input"`, switch to a multimodal model. For Alibaba DashScope, `qwen-vl-max` supports vision. Coding-focused models (`qwen3-coder-*`, `qwen3.6-plus`, etc.) are text-only.
+
+### Migrating from v0.3.x or earlier
+
+The old `customLlm.baseUrl` and `customLlm.apiKey` settings are automatically migrated to the new `customLlm.providers` array on the first launch. If you need to re-run migration manually, remove the `customLlm.providers` entry from your settings and reload VS Code.
 
 ---
 
@@ -207,7 +272,7 @@ If this extension saves you time, consider buying me a coffee!
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=github-sponsors)](https://github.com/sponsors/milhaus123)
 
-Your support helps keep the project maintained and updated with new Qwen model releases. 🙏
+Your support helps keep the project maintained and updated with new model releases. 🙏
 
 ---
 

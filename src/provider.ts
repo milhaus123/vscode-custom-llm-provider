@@ -1,8 +1,13 @@
 import * as vscode from 'vscode';
 
+// OpenAI content part — used for multimodal (vision) messages
+type OpenAIContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: string | null | OpenAIContentPart[];
   // Assistant tool calls
   tool_calls?: Array<{
     id: string;
@@ -43,6 +48,7 @@ interface OpenAIStreamChunk {
 interface ModelConfig {
   id: string;
   name: string;
+  providerUrl?: string;
   maxInputTokens: number;
   maxOutputTokens: number;
 }
@@ -59,6 +65,16 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxDelayMs: 10000,
 };
 
+/** Convert a raw image Uint8Array + mimeType to a base64 data URL */
+function toDataUrl(data: Uint8Array, mimeType: string): string {
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < data.length; i += chunkSize) {
+    binary += String.fromCharCode(...data.subarray(i, i + chunkSize));
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
 function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMessage[]): OpenAIMessage[] {
   const result: OpenAIMessage[] = [];
 
@@ -66,12 +82,19 @@ function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMess
     const isUser = msg.role === vscode.LanguageModelChatMessageRole.User;
 
     const textParts: string[] = [];
+    const imageParts: vscode.LanguageModelDataPart[] = [];
     const toolCallParts: vscode.LanguageModelToolCallPart[] = [];
     const toolResultParts: vscode.LanguageModelToolResultPart[] = [];
 
     for (const part of msg.content) {
       if (part instanceof vscode.LanguageModelTextPart) {
         textParts.push(part.value);
+      } else if (part instanceof vscode.LanguageModelDataPart) {
+        // Image or binary data attached to the message
+        if (part.mimeType.startsWith('image/')) {
+          imageParts.push(part);
+        }
+        // Non-image data parts (json, etc.) are silently skipped — models don't support them
       } else if (part instanceof vscode.LanguageModelToolCallPart) {
         toolCallParts.push(part);
       } else if (part instanceof vscode.LanguageModelToolResultPart) {
@@ -99,11 +122,28 @@ function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMess
         })),
       });
     } else if (toolResultParts.length === 0) {
-      // Plain text message — only add if there were no tool results (already handled above)
-      result.push({
-        role: isUser ? 'user' : 'assistant',
-        content: textParts.join(''),
-      });
+      // Build content — either plain string (no images) or multipart array (with images)
+      if (imageParts.length > 0) {
+        const contentParts: OpenAIContentPart[] = [];
+        if (textParts.length > 0) {
+          contentParts.push({ type: 'text', text: textParts.join('') });
+        }
+        for (const img of imageParts) {
+          contentParts.push({
+            type: 'image_url',
+            image_url: { url: toDataUrl(img.data, img.mimeType) },
+          });
+        }
+        result.push({
+          role: isUser ? 'user' : 'assistant',
+          content: contentParts,
+        });
+      } else {
+        result.push({
+          role: isUser ? 'user' : 'assistant',
+          content: textParts.join(''),
+        });
+      }
     }
   }
 
@@ -143,20 +183,51 @@ async function fetchWithRetry(
       
       const status = response.status;
       const errorBody = await response.text().catch(() => 'Unknown error');
-      
+
+      // Try to extract a human-readable message from JSON error responses
+      let errorMessage = errorBody;
+      try {
+        const parsed = JSON.parse(errorBody);
+        // OpenAI-compatible: { error: { message } } or { message } or { msg }
+        errorMessage =
+          parsed?.error?.message ??
+          parsed?.message ??
+          parsed?.msg ??
+          errorBody;
+      } catch { /* not JSON — use raw body */ }
+
       if (status === 401) {
         throw new Error(
           'Custom LLM: Invalid or missing API key.\n' +
-          'Run the command "Custom LLM: Configure endpoint & API key" (Ctrl+Shift+P) to set your API key.\n' +
-          `Details: ${errorBody}`
+          'Open Command Palette (Ctrl+Shift+P) → "Custom LLM: Manage providers" to update your API key.\n' +
+          `Details: ${errorMessage}`
         );
       }
 
+      // Image/vision not supported by this model
+      if (status === 400) {
+        const lower = errorMessage.toLowerCase();
+        if (
+          lower.includes('image') ||
+          lower.includes('vision') ||
+          lower.includes('multimodal') ||
+          lower.includes('does not support') ||
+          lower.includes('unsupported') ||
+          lower.includes('invalid content type')
+        ) {
+          throw new Error(
+            `Custom LLM: This model does not support image input.\n` +
+            `Use a multimodal model (e.g. qwen-vl-max) for image analysis.\n` +
+            `Details: ${errorMessage}`
+          );
+        }
+      }
+
       if (!isRetryableError(status)) {
-        throw new Error(`Custom LLM (${status}): ${errorBody}`);
+        throw new Error(`Custom LLM (${status}): ${errorMessage}`);
       }
       
-      lastError = new Error(`Custom LLM (${status}): ${errorBody}`);
+      lastError = new Error(`Custom LLM (${status}): ${errorMessage}`);
       
       if (attempt < retryConfig.maxRetries) {
         const delay = calculateDelay(attempt, retryConfig.initialDelayMs, retryConfig.maxDelayMs);
@@ -179,6 +250,7 @@ async function fetchWithRetry(
   throw lastError || new Error('Request failed after all retries');
 }
 
+
 export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
 
   private readonly _onDidChange = new vscode.EventEmitter<void>();
@@ -194,29 +266,34 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
 
   // Called by VS Code during model discovery
   provideLanguageModelChatInformation(
-    options: vscode.PrepareLanguageModelChatModelOptions,
+    _options: vscode.PrepareLanguageModelChatModelOptions,
     _token: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.LanguageModelChatInformation[]> {
     const cfg = vscode.workspace.getConfiguration('customLlm');
     const modelConfigs: ModelConfig[] = cfg.get('models') ?? [];
+    const providers: Array<{ name: string; baseUrl: string }> = cfg.get('providers') ?? [];
 
-    const baseUrl: string = cfg.get('baseUrl') ?? '';
-    const providerLabel = baseUrl.includes('dashscope') ? 'Alibaba DashScope' : 'Custom LLM';
+    // Build a map: providerUrl → provider name for display
+    const nameMap = new Map(providers.map(p => [p.baseUrl, p.name]));
 
-    return modelConfigs.map((m) => ({
-      id: m.id,
-      name: m.name,
-      family: m.id.split(/[-:]/)[0],
-      version: '1',
-      detail: providerLabel,
-      maxInputTokens: m.maxInputTokens,
-      maxOutputTokens: m.maxOutputTokens,
-      // Show in the Copilot Chat model picker dropdown
-      showInModelPicker: true,
-      capabilities: {
-        toolCalling: true,
-      },
-    }));
+    return modelConfigs.map((m) => {
+      const providerLabel = nameMap.get(m.providerUrl ?? '')
+        ?? (m.providerUrl?.includes('dashscope') ? 'Alibaba DashScope' : 'Custom LLM');
+      return {
+        id: m.id,
+        name: m.name,
+        family: m.id.split(/[-:.]/)[0],
+        version: '1',
+        detail: providerLabel,
+        maxInputTokens: m.maxInputTokens,
+        maxOutputTokens: m.maxOutputTokens,
+        showInModelPicker: true,
+        capabilities: {
+          toolCalling: true,
+          imageInput: true,
+        },
+      };
+    });
   }
 
   // Response is streamed via progress.report(), return value is void
@@ -228,8 +305,19 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     token: vscode.CancellationToken
   ): Promise<void> {
     const cfg = vscode.workspace.getConfiguration('customLlm');
-    const baseUrl: string = cfg.get('baseUrl') ?? '';
-    const apiKey: string = cfg.get('apiKey') ?? '';
+
+    // Look up which provider this model belongs to
+    const models: ModelConfig[] = cfg.get('models') ?? [];
+    const providers: Array<{ name: string; baseUrl: string; apiKey: string }> = cfg.get('providers') ?? [];
+    const modelCfg = models.find(m => m.id === model.id);
+
+    // Find provider by matching providerUrl; fall back to first provider
+    const provider = modelCfg
+      ? providers.find(p => p.baseUrl === modelCfg.providerUrl) ?? providers[0]
+      : providers[0];
+
+    const baseUrl: string = provider?.baseUrl ?? '';
+    const apiKey: string  = provider?.apiKey  ?? '';
 
     // Prepare tools if provided
     let tools: OpenAITool[] | undefined;

@@ -1,132 +1,117 @@
 # Changelog
 
+## v0.4.3 — April 2026
+
+### New features
+- **Image/vision support** — attach images directly in Copilot Chat
+  - The image attachment button is now enabled for all models — VS Code no longer shows images as crossed out
+  - Images are converted to base64 `data:image/...` URLs and sent in the standard OpenAI multipart content format
+  - If the selected model does not support images, a clear error message is shown: `"This model does not support image input. Use a multimodal model (e.g. qwen-vl-max)..."`
+  - Non-image data parts (JSON, binary) are silently ignored
+
+### Improved error messages
+- API error responses are now parsed as JSON — users see the human-readable message instead of a raw JSON blob
+- 400 errors mentioning "image", "vision", or "unsupported" show a specific helpful message with a suggestion to use a multimodal model
+- 401 error message updated to reference the new `Custom LLM: Manage providers` command
+
+---
+
+## v0.4.2 — April 2026
+
+_(superseded by v0.4.3 — do not use)_
+
+---
+
+## v0.4.1 — April 2026
+
+### Bug fixes
+- **Fixed:** Adding a second provider via the wizard (`Custom LLM: Add provider`) did not load the new provider's models or update the model picker
+- **Fixed:** Adding a provider directly in `settings.json` did not trigger model discovery — models were never fetched for the new provider
+- The config watcher now calls `GET /v1/models` when `customLlm.providers` changes (e.g. manual settings edit), preventing a discovery loop when only the model list changes
+- `Custom LLM: Add provider` now explicitly notifies VS Code that the model list has changed after discovery completes
+
+---
+
+## v0.4.0 — April 2026
+
+### Multi-provider support
+- **New:** Add unlimited providers — each with its own Base URL and API key
+- **New command:** `Custom LLM: Add provider` — guided wizard (name → URL → API key → auto-discover models)
+- **New command:** `Custom LLM: Manage providers` — list, edit, or remove configured providers
+- Each model is now tagged with its `providerUrl` so requests always go to the correct endpoint
+- `provider.ts` routes each request to the right API key based on the model selected
+
+### Dynamic model discovery
+- On startup the extension calls `GET /v1/models` for every configured provider
+- Models from all providers are merged into a single list in the Copilot Chat picker
+- **New command:** `Custom LLM: Refresh model list from API` — manually reload at any time
+- Falls back to built-in defaults when the endpoint is unreachable or no key is set
+
+### Automatic migration
+- Existing `customLlm.baseUrl` + `customLlm.apiKey` settings are migrated to the new `customLlm.providers` array automatically on first start — no manual action needed
+
+### Settings changes
+- **New:** `customLlm.providers` — array of `{ name, baseUrl, apiKey }`
+- **Deprecated:** `customLlm.baseUrl` and `customLlm.apiKey` (still read for migration)
+
+---
+
 ## v0.3.0 — April 2026
 
-### Added `@qwen` chat participant
-- **New feature:** `@qwen` participant for direct routing of queries to custom LLM
-- **Better UX:** No need to change model picker — just type `@qwen` in chat
-- **Model support:** Automatic model selection based on first word in prompt
+### Dynamic model discovery
+- Extension fetches available models from `GET /v1/models` on startup
+- Falls back to hardcoded defaults if the endpoint is unavailable
 
-### Tool calling (agent mode)
-- **`toolCalling: true`** — agent mode, `/fix`, `/edit`, `@workspace` now work
-- Models can call VS Code tools (file reading, editing, running commands)
+### Auto-migration of token limits
+- On update, existing model settings are automatically updated with corrected context sizes
 
-### Updated models
-- Added `qwen3.6-plus` (1M context, 64K output)
-- Added `glm-5` (200K context)
-- Added `MiniMax-M2.5` (256K context)
-- Updated token limits for all models
+### Correct context window sizes
+- `qwen3.6-plus`: 1M context, 65K output
+- `qwen3.5-plus`: 1M context, 16K output
+- `kimi-k2.5`: 256K context, 32K output
+- `glm-5`: 200K context, 16K output
+- `MiniMax-M2.5`: 256K context
 
-### VS Code 1.104+
-- Minimum required version bumped to `^1.104.0`
-
----
-
-## v0.2.0
-
-### Retry logic fix
-- Fixed exponential backoff implementation
-- Better error handling and edge cases
-
-### Code cleanup
-- Removed unnecessary files and dependencies
+### Better 401 error message
+- When API key is invalid or missing, the error now shows a clear instruction to run `Custom LLM: Configure endpoint & API key`
 
 ---
 
-## v0.1.0
+## v0.2.0 — April 2026
 
-### 🎯 Main Changes
+### New models
+All models from Alibaba Cloud Coding Plan added out of the box:
+- `qwen3.6-plus` (1M context)
+- `glm-5`, `glm-4.7` (Zhipu)
+- `kimi-k2.5` (Moonshot)
+- `MiniMax-M2.5` (MiniMax)
 
-#### Removed chat participant (@qwen)
-- **Reason:** `mgt.clearMarks is not a function` error and duplicate functionality
-- **Solution:** Extension now uses only the standard model picker in Copilot Chat
-- **Benefits:**
-  - Cleaner architecture
-  - No more markdown renderer errors
-  - Consistent UX with other Copilot extensions
-
-#### Added retry logic for network requests
-- **Exponential backoff:** 1s → 2s → 4s between attempts
-- **Retries on:**
-  - 429 Too Many Requests (rate limit)
-  - 500-504 Server errors
-- **Maximum delay:** 10 seconds
-- **Random jitter:** ±30% to prevent thundering herd
-- **Cancellation respected:** No retry when user presses "stop"
-
-#### Tool Calling support (preparation)
-- Added OpenAI function calling types
-- Implemented tool_calls parsing in stream handler
-- Currently set to `toolCalling: false`
-- Ready for future VS Code tool integration
-
-### 📦 Technical Changes
-
-#### Updated dependencies
-```json
-"engines": {
-  "vscode": "^1.94.0"     // was: ^1.90.0
-},
-"devDependencies": {
-  "@types/vscode": "^1.94.0"  // was: ^1.90.0
-}
-```
-
-#### Removed files
-- `src/participant.ts` - no longer needed
-- `out/participant.js` - compiled version
-- `out/participant.js.map` - source map
-
-#### Updated files
-- `src/extension.ts` - removed participant reference
-- `src/provider.ts` - added retry logic and tool calling types
-- `package.json` - removed chatParticipants from contributes
-- `README.md` - updated documentation
-- `tsconfig.json` - added better compiler options
-- `.vscodeignore` - ignore unnecessary files
-
-### New files
-- `LICENSE.md` - MIT license (required for publishing)
-- `CHANGELOG.md` - this file
-
-## 🐛 Bug Fixes
-
-### v0.0.x
-- `mgt.clearMarks is not a function` - removed participant
-- Inconsistent base URL between provider and participant
-- Missing retry logic for production use
-
-### v0.1.0
-- All known issues resolved
-
-## 🚀 How to Update
-
-```bash
-# Uninstall old version
-code --uninstall-extension MartinRiha.vscode-custom-llm-provider
-
-# Install new version
-code --install-extension vscode-custom-llm-provider-0.1.0.vsix
-```
-
-## 📝 Migration Notes
-
-If you were using the `@qwen` command in Copilot Chat:
-1. Open Copilot Chat (`Ctrl+Alt+I`)
-2. Click the model name at the top of the chat
-3. Select any Qwen model from the list
-4. You can now chat directly with the selected model
-
-## 🔮 Planned Features (Future Versions)
-
-- [ ] Full tool calling support for VS Code functions
-- [ ] Custom tokenizer for more accurate token counting
-- [ ] System messages support
-- [ ] Configurable retry policy in settings
-- [ ] Metrics and telemetry for error monitoring
+### Auto-merge of new models
+- When updating the extension, any new default models are automatically added to the user's model list without overwriting custom entries
 
 ---
 
-**Released versions:**
-- v0.1.0 (2026-03-31) - Major refactor, retry logic, tool calling preparation
-- v0.0.1 (2026-XX-XX) - Initial release
+## v0.1.0 — March 2026
+
+### `@qwen` chat participant
+- Type `@qwen` in Copilot Chat to always route to your custom model
+- Supports model selection by name: `@qwen qwen3-coder-plus refactor this`
+
+### Tool calling & agent mode
+- Full tool calling support: agent mode, `/fix`, `/edit`, `@workspace` all work
+
+### Retry logic
+- Automatic exponential backoff on 429 (rate limit) and 5xx (server errors)
+- 3 retries with delays of ~1s, ~2s, ~4s (max 10s), with ±30% jitter
+- Cancellation is never retried
+
+### Initial model list
+- `qwen3-coder-plus`, `qwen3-coder-next`, `qwen3-max`, `qwen3.5-plus`
+
+---
+
+## v0.0.1 — March 2026
+
+- Initial release
+- Basic OpenAI-compatible provider registered in VS Code Copilot Chat
+- Model picker integration via `registerLanguageModelChatProvider`
