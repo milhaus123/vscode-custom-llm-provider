@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.4 — April 2026
+
+### Bug fixes
+- **Fixed:** API key field was not visible in Settings UI when adding a new provider
+  - Added `required` attribute to provider schema to ensure all fields (name, baseUrl, apiKey) are displayed in the VS Code Settings editor
+
+---
+
 ## v0.4.3 — April 2026
 
 ### New features
