@@ -210,11 +210,23 @@ async function syncCopilotPickerModels(): Promise<void> {
 
 // ── Commands ───────────────────────────────────────────────────────────────────
 
+async function promptForApiKey(providerName: string, currentValue = ''): Promise<string | undefined> {
+  return vscode.window.showInputBox({
+    title: `Custom LLM — API Key for "${providerName}"`,
+    prompt: 'Paste your API key (e.g. sk-…). Required for most providers — without it, model discovery and requests will fail.',
+    placeHolder: 'sk-...',
+    password: true,
+    value: currentValue,
+    ignoreFocusOut: true, // critical: keeps the box open when VS Code's native UI closes after the previous step
+  });
+}
+
 async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
   const name = await vscode.window.showInputBox({
     title: 'Custom LLM — Provider name',
     prompt: 'e.g. "Alibaba DashScope" or "OpenRouter"',
     placeHolder: 'My Provider',
+    ignoreFocusOut: true,
   });
   if (!name) { return; }
 
@@ -222,14 +234,11 @@ async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
     title: 'Custom LLM — Base URL',
     prompt: 'OpenAI-compatible endpoint URL (must end with /v1)',
     placeHolder: 'https://coding-intl.dashscope.aliyuncs.com/v1',
+    ignoreFocusOut: true,
   });
   if (!baseUrl) { return; }
 
-  const apiKey = await vscode.window.showInputBox({
-    title: 'Custom LLM — API Key',
-    prompt: 'API key (sk-…). Leave empty if not required.',
-    password: true,
-  });
+  const apiKey = await promptForApiKey(name);
   if (apiKey === undefined) { return; }
 
   const providers = getProviders();
@@ -242,7 +251,31 @@ async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
   }
   await saveProviders(providers);
 
-  vscode.window.showInformationMessage(`Custom LLM: Provider "${name}" saved. Fetching models…`);
+  // Safety net — if the API key prompt was skipped / dismissed by a VS Code
+  // UI transition (known with the gear-icon management flow in 1.104+),
+  // offer a second chance via notification action.
+  if (!apiKey) {
+    vscode.window.showWarningMessage(
+      `Custom LLM: Provider "${name}" saved without an API key.`,
+      'Add API key now'
+    ).then(async choice => {
+      if (choice !== 'Add API key now') { return; }
+      const key = await promptForApiKey(name);
+      if (!key) { return; }
+      const current = getProviders();
+      const i = current.findIndex(p => p.baseUrl === baseUrl);
+      if (i >= 0) {
+        current[i].apiKey = key;
+        await saveProviders(current);
+        await discoverAllModels(false);
+        await syncCopilotPickerModels();
+        provider?.notifyModelsChanged();
+      }
+    });
+  } else {
+    vscode.window.showInformationMessage(`Custom LLM: Provider "${name}" saved. Fetching models…`);
+  }
+
   await discoverAllModels(false);
   await syncCopilotPickerModels();
   provider?.notifyModelsChanged();
