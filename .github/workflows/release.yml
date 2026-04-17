@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+# Prevent concurrent releases
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version_match: ${{ steps.check.outputs.version_match }}
+      is_owner: ${{ steps.check.outputs.is_owner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify version matches package.json
+        id: check
+        run: |
+          TAG_VERSION="${{ github.event.release.tag_name }}"
+          TAG_VERSION="${TAG_VERSION#v}"  # Strip leading 'v' if present
+
+          PKG_VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$TAG_VERSION" = "$PKG_VERSION" ]; then
+            echo "version_match=true" >> $GITHUB_OUTPUT
+            echo "✅ Version $PKG_VERSION matches tag ${{ github.event.release.tag_name }}"
+          else
+            echo "version_match=false" >> $GITHUB_OUTPUT
+            echo "❌ Version mismatch: tag=$TAG_VERSION != package.json=$PKG_VERSION"
+          fi
+
+          # Check if release was created by repo owner
+          CREATOR="${{ github.event.release.author.login }}"
+          if [ "$CREATOR" = "milhaus123" ]; then
+            echo "is_owner=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_owner=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Release created by $CREATOR (not owner)"
+          fi
+
+  publish-marketplace:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production  # Requires manual approval in GitHub Settings
+    if: needs.verify.outputs.version_match == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify release creator
+        if: needs.verify.outputs.is_owner != 'true'
+        run: |
+          echo "⚠️ WARNING: Release was created by ${{ github.event.release.author.login }}"
+          echo "Proceeding because version verification passed, but this will be logged."
+
+      - name: Publish to VS Code Marketplace
+        run: npx vsce publish -p ${{ secrets.VSCE_PAT }}
+
+      - name: Upload VSIX to GitHub Release
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} *.vsix --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify release status
+        run: |
+          echo "✅ Successfully published version ${{ github.event.release.tag_name }} to VS Code Marketplace"
+          echo "📝 Released by: ${{ github.event.release.author.login }}"

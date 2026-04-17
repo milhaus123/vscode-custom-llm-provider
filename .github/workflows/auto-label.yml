@@ -1,0 +1,59 @@
+name: Auto Label PRs
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const changedFiles = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            const labels = new Set();
+            const filenames = changedFiles.data.map(f => f.filename);
+
+            // Source code changes
+            if (filenames.some(f => f.startsWith('src/') || f.endsWith('.ts'))) {
+              labels.add('code');
+            }
+
+            // Documentation
+            if (filenames.some(f => f.endsWith('.md'))) {
+              labels.add('documentation');
+            }
+
+            // CI/CD changes
+            if (filenames.some(f => f.startsWith('.github/workflows/'))) {
+              labels.add('ci-cd');
+            }
+
+            // Extension manifest
+            if (filenames.some(f => f === 'package.json')) {
+              labels.add('extension');
+            }
+
+            // VSCode config
+            if (filenames.some(f => f.startsWith('.vscode/'))) {
+              labels.add('vscode-config');
+            }
+
+            if (labels.size > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: Array.from(labels),
+              });
+            }
