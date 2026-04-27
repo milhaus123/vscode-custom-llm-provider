@@ -5,7 +5,7 @@ Works out of the box with **Alibaba DashScope (Qwen)**, OpenRouter, and any othe
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.4.3-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.5-brightgreen)](CHANGELOG.md)
 
 ---
 
@@ -22,7 +22,7 @@ Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder
 ## ✨ Features
 
 - Models appear directly in the **Copilot Chat model picker** — no extra setup
-- **`@qwen` chat participant** — invoke your custom models anywhere in Copilot Chat
+- **`@qwen` chat participant** (opt-in) — type `@qwen` in any chat turn to route just that message through your custom model
 - **Multi-provider support** — connect Alibaba DashScope, OpenRouter, and any other provider simultaneously, each with its own URL and API key
 - **Dynamic model discovery** — models are fetched automatically from each provider's `/v1/models` endpoint on startup
 - **Image input support** — attach images directly in Copilot Chat (requires a multimodal model such as `qwen-vl-max`)
@@ -62,12 +62,14 @@ Open Copilot Chat (`Ctrl+Alt+I`) → click the model name → your models appear
 
 ### 3. Use the `@qwen` participant (optional)
 
-Type `@qwen` in Copilot Chat to always route to your custom model, regardless of picker selection.
+Type `@qwen` at the start of a message to route **that single turn** through your custom model — regardless of which model is selected in the picker.
 
 ```
 @qwen explain the auth flow in this codebase
 @qwen qwen3-coder-plus refactor this function
 ```
+
+> **Per-turn, not sticky:** since v0.4.5 the participant is **not sticky** — you have to type `@qwen` every time you want it. Without `@qwen`, the message goes to whatever model you picked in the model picker (including original GitHub Copilot models like GPT-4 or Claude). This prevents the participant from accidentally hijacking native Copilot turns. If you want to always use your custom model, select it in the picker instead.
 
 ![Using the @qwen chat participant](images/qwen-participant.png)
 
@@ -199,6 +201,12 @@ Maximum delay capped at 10 seconds. Request cancellation is never retried.
 ---
 
 ## 🛠️ Troubleshooting
+
+### Original Copilot models reply "no input given" / context fills to ~95% in a loop
+
+Fixed in **v0.4.5**. In earlier versions, the `@qwen` participant was sticky, so once you used it, every subsequent message was silently routed through the participant — even when you switched the picker back to a built-in Copilot model (GPT-4, Claude, etc.). On agent-mode turns where the actual content was in references/tool results rather than plain prompt text, the participant forwarded an empty user message, the model replied "what do you need?", and the loop repeated until the context filled.
+
+If you see this on **0.4.4 or earlier**, update to 0.4.5+. As a workaround on older versions, fully clear the `@qwen` mention from the prompt and reload the chat.
 
 ### Agent mode loops / repeating the same actions
 

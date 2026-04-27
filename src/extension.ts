@@ -186,10 +186,26 @@ async function syncCopilotPickerModels(): Promise<void> {
   // Build a map: providerUrl → apiKey for fast lookup
   const keyMap = new Map(providers.map(p => [p.baseUrl, p.apiKey]));
 
-  const customOAIModels: Record<string, object> = {};
+  // We MUST merge into existing customOAIModels rather than overwrite — the
+  // user (or another extension) may have configured their own BYOK models
+  // there. Overwriting was clobbering them and made the model picker confusing.
+  const cfg = vscode.workspace.getConfiguration('github.copilot.chat');
+  const existing = (cfg.get<Record<string, object>>('customOAIModels')) ?? {};
+
+  // Track which IDs belong to *our* configured models. We only touch those;
+  // anything else in `existing` is left alone so we never wipe foreign entries.
+  const ourModelIds = new Set(models.map(m => m.id));
+  const merged: Record<string, object> = {};
+
+  for (const [id, val] of Object.entries(existing)) {
+    if (!ourModelIds.has(id)) {
+      merged[id] = val;
+    }
+  }
+
   for (const model of models) {
     const apiKey = keyMap.get(model.providerUrl) ?? '';
-    customOAIModels[model.id] = {
+    merged[model.id] = {
       name: model.name,
       url: model.providerUrl,
       toolCalling: true,
@@ -200,11 +216,7 @@ async function syncCopilotPickerModels(): Promise<void> {
   }
 
   try {
-    await vscode.workspace.getConfiguration('github.copilot.chat').update(
-      'customOAIModels',
-      customOAIModels,
-      vscode.ConfigurationTarget.Global
-    );
+    await cfg.update('customOAIModels', merged, vscode.ConfigurationTarget.Global);
   } catch { /* older VS Code */ }
 }
 
@@ -382,10 +394,12 @@ export function activate(context: vscode.ExtensionContext) {
         await syncCopilotPickerModels();
         provider.notifyModelsChanged();
       });
-    } else if (e.affectsConfiguration('customLlm')) {
-      // Other customLlm settings changed (e.g. models list updated by discovery) —
-      // just re-sync the picker without triggering another discovery loop.
-      syncCopilotPickerModels();
+    } else if (e.affectsConfiguration('customLlm.models')) {
+      // Models list changed (most often by our own discoverAllModels write).
+      // Only refresh our LanguageModelChatProvider — do NOT call
+      // syncCopilotPickerModels here, otherwise every discovery cycle
+      // triggers another write to github.copilot.chat.customOAIModels,
+      // which fights with the user's BYOK setup and amplifies writes.
       provider.notifyModelsChanged();
     }
   });

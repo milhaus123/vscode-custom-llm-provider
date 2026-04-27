@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.4.5 — April 2026
+
+### Bug fixes
+
+- **Fixed:** Original GitHub Copilot models (GPT-4, Claude, etc.) appeared to lose the user's prompt and reply with "what do you need?" while context climbed to ~95%, in a loop.
+  - Root cause: the `@qwen` chat participant was declared `isSticky: true`, so once invoked it kept hijacking every subsequent turn even after the user switched models in the picker. In agent mode, where the actual content lives in references/tool calls rather than `request.prompt`, the participant forwarded an empty user message → the model asked for input → Copilot resent the (still empty) prompt → infinite loop.
+  - Now `isSticky: false` — `@qwen` only routes the turn it explicitly appears in.
+  - The participant also bails out with a clear warning instead of forwarding an empty `User('')` message.
+- **Fixed:** `syncCopilotPickerModels()` was overwriting the entire `github.copilot.chat.customOAIModels` setting on every config change, wiping any BYOK models the user (or another extension) had configured. The function now **merges** instead — only entries owned by Custom LLM Provider are touched.
+- **Fixed:** Write-amplification in the configuration watcher — `discoverAllModels` writes to `customLlm.models`, which fired the watcher, which called `syncCopilotPickerModels` again on every cycle. The watcher now reacts only to `customLlm.providers` and `customLlm.models`, and skips the redundant picker sync.
+
+---
+
 ## v0.4.4 — April 2026
 
 ### Bug fixes

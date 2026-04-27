@@ -39,12 +39,28 @@ export function registerChatParticipant(context: vscode.ExtensionContext): vscod
         ? request.prompt.trim().slice(firstWord.length).trim()
         : request.prompt;
 
+      // Bail out on empty prompts — happens in agent mode when actual content
+      // is in references / tool results rather than `request.prompt`. Without
+      // this guard we would send `User('')` to the model, which replies
+      // "what do you need?" and Copilot retries → infinite loop, context
+      // climbs to 95%. See FIXES.md for prior incident.
+      const finalUserText = (userPrompt || request.prompt).trim();
+      if (!finalUserText) {
+        stream.markdown(
+          '⚠️ **Empty prompt.** Type a message before sending — ' +
+          '`@qwen` only sees plain text, not attached files or tool results from the picker.'
+        );
+        return;
+      }
+
       // Build message history
       const messages: vscode.LanguageModelChatMessage[] = [];
 
       for (const turn of chatContext.history) {
         if (turn instanceof vscode.ChatRequestTurn) {
-          messages.push(vscode.LanguageModelChatMessage.User(turn.prompt));
+          if (turn.prompt && turn.prompt.trim()) {
+            messages.push(vscode.LanguageModelChatMessage.User(turn.prompt));
+          }
         } else if (turn instanceof vscode.ChatResponseTurn) {
           const text = turn.response
             .filter((p): p is vscode.ChatResponseMarkdownPart => p instanceof vscode.ChatResponseMarkdownPart)
@@ -56,7 +72,7 @@ export function registerChatParticipant(context: vscode.ExtensionContext): vscod
         }
       }
 
-      messages.push(vscode.LanguageModelChatMessage.User(userPrompt || request.prompt));
+      messages.push(vscode.LanguageModelChatMessage.User(finalUserText));
 
       // Show which model is responding
       stream.markdown(`*[${model.name}]*\n\n`);
