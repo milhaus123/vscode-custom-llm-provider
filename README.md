@@ -5,7 +5,7 @@ Works out of the box with **Alibaba DashScope (Qwen)**, OpenRouter, and any othe
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.4.5-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.7-brightgreen)](CHANGELOG.md)
 
 ---
 
@@ -266,6 +266,11 @@ npm run compile
 
 # Package as .vsix
 npx vsce package
+# Publish to the marketplace
+npx vsce publish 
+
+# zvýší a publikuje
+npx vsce publish patch     
 
 # Install locally
 code --install-extension vscode-custom-llm-provider-*.vsix

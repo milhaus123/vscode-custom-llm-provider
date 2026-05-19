@@ -31,6 +31,10 @@ interface OpenAIStreamChunk {
   choices: Array<{
     delta: {
       content?: string;
+      // Some reasoning-capable endpoints (Qwen3 thinking, DeepSeek-R1, QwQ, etc.)
+      // stream the chain-of-thought separately in this field. Copilot doesn't
+      // render thinking, so we consume + log but never forward it.
+      reasoning_content?: string;
       tool_calls?: Array<{
         index?: number;
         id?: string;
@@ -43,6 +47,15 @@ interface OpenAIStreamChunk {
     };
     finish_reason: string | null;
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    completion_tokens_details?: {
+      reasoning_tokens?: number;
+      text_tokens?: number;
+    };
+  };
 }
 
 interface ModelConfig {
@@ -65,6 +78,82 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxDelayMs: 10000,
 };
 
+// Lazy-initialized output channel — visible in View → Output → "Custom LLM".
+let _logChannel: vscode.OutputChannel | undefined;
+function log(): vscode.OutputChannel {
+  if (!_logChannel) {
+    _logChannel = vscode.window.createOutputChannel('Custom LLM');
+  }
+  return _logChannel;
+}
+export function logLine(msg: string): void {
+  log().appendLine(`[${new Date().toISOString()}] ${msg}`);
+}
+
+interface RequestStats {
+  contentChunks: number;
+  contentChars: number;
+  reasoningChunks: number;
+  reasoningChars: number;
+  toolCallChunks: number;
+  finishReason: string | null;
+  malformedChunks: number;
+  summaryLogged: boolean;
+  usage: { promptTokens: number; completionTokens: number; reasoningTokens: number } | null;
+}
+
+function logSummary(
+  reqId: string,
+  stats: RequestStats,
+  startedAt: number,
+  model: vscode.LanguageModelChatInformation,
+  reason: string = 'done'
+): void {
+  if (stats.summaryLogged) return;
+  stats.summaryLogged = true;
+  const ms = Date.now() - startedAt;
+  const parts = [
+    `[${reqId}] ← ${reason}`,
+    `model=${model.id}`,
+    `${ms}ms`,
+    `content=${stats.contentChunks}ch/${stats.contentChars}c`,
+    `reasoning=${stats.reasoningChunks}ch/${stats.reasoningChars}c`,
+    `tools=${stats.toolCallChunks}`,
+    `finish=${stats.finishReason ?? '∅'}`,
+  ];
+  if (stats.malformedChunks > 0) parts.push(`malformed=${stats.malformedChunks}`);
+  logLine(parts.join('  '));
+
+  // Structured JSON usage line — same format as LiteLLM extension
+  if (stats.usage) {
+    log().appendLine(JSON.stringify({
+      event: 'token_usage',
+      reqId,
+      model: model.id,
+      ms,
+      prompt_tokens: stats.usage.promptTokens,
+      completion_tokens: stats.usage.completionTokens,
+      reasoning_tokens: stats.usage.reasoningTokens,
+      finish_reason: stats.finishReason,
+    }));
+  }
+
+  if (stats.contentChunks === 0 && stats.toolCallChunks === 0) {
+    if (stats.reasoningChunks > 0) {
+      logLine(
+        `[${reqId}] ⚠️  EMPTY CONTENT — model produced ${stats.reasoningChars} chars of reasoning but 0 chars of content. ` +
+        `Likely cause: max_tokens (${model.maxOutputTokens}) exhausted inside reasoning. ` +
+        `Increase maxOutputTokens for "${model.id}" to 32768+ in settings.`
+      );
+    } else {
+      logLine(
+        `[${reqId}] ⚠️  EMPTY RESPONSE — no content, reasoning, or tool calls received. ` +
+        `Check upstream model configuration / network.`
+      );
+    }
+  }
+}
+
 /** Convert a raw image Uint8Array + mimeType to a base64 data URL */
 function toDataUrl(data: Uint8Array, mimeType: string): string {
   let binary = '';
@@ -73,6 +162,31 @@ function toDataUrl(data: Uint8Array, mimeType: string): string {
     binary += String.fromCharCode(...data.subarray(i, i + chunkSize));
   }
   return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isTextPartLike(value: unknown): value is { value: string } {
+  return isObject(value) && typeof value.value === 'string';
+}
+
+function isToolCallPartLike(value: unknown): value is { callId: string; name: string; input?: unknown } {
+  return isObject(value) && typeof value.callId === 'string' && typeof value.name === 'string';
+}
+
+function isToolResultPartLike(value: unknown): value is { callId: string; content: unknown[] } {
+  return isObject(value) && typeof value.callId === 'string' && Array.isArray(value.content);
+}
+
+function partDebugInfo(part: unknown): string {
+  if (!isObject(part)) {
+    return `type=${typeof part}`;
+  }
+  const ctor = typeof part.constructor?.name === 'string' ? part.constructor.name : 'Object';
+  const keys = Object.keys(part).slice(0, 10).join(',');
+  return `ctor=${ctor} keys=[${keys}]`;
 }
 
 function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMessage[]): OpenAIMessage[] {
@@ -90,27 +204,24 @@ function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMess
       if (part instanceof vscode.LanguageModelTextPart) {
         textParts.push(part.value);
       } else if (part instanceof vscode.LanguageModelDataPart) {
-        // Image or binary data attached to the message
         if (part.mimeType.startsWith('image/')) {
           imageParts.push(part);
         }
-        // Non-image data parts (json, etc.) are silently skipped — models don't support them
       } else if (part instanceof vscode.LanguageModelToolCallPart) {
         toolCallParts.push(part);
       } else if (part instanceof vscode.LanguageModelToolResultPart) {
         toolResultParts.push(part);
+      } else if (isToolCallPartLike(part)) {
+        logLine(`[toOpenAIMessages] structurally recognized tool call part: ${partDebugInfo(part)}`);
+        toolCallParts.push(part as unknown as vscode.LanguageModelToolCallPart);
+      } else if (isToolResultPartLike(part)) {
+        logLine(`[toOpenAIMessages] structurally recognized tool result part: ${partDebugInfo(part)}`);
+        toolResultParts.push(part as unknown as vscode.LanguageModelToolResultPart);
+      } else {
+        logLine(`[toOpenAIMessages] unknown message part ignored: ${partDebugInfo(part)}`);
       }
     }
 
-    // Tool results → individual 'tool' role messages (one per call result)
-    for (const tr of toolResultParts) {
-      const content = tr.content
-        .map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : ''))
-        .join('');
-      result.push({ role: 'tool', content, tool_call_id: tr.callId });
-    }
-
-    // Assistant message with tool calls
     if (toolCallParts.length > 0) {
       result.push({
         role: 'assistant',
@@ -118,31 +229,34 @@ function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMess
         tool_calls: toolCallParts.map((tc) => ({
           id: tc.callId,
           type: 'function',
-          function: { name: tc.name, arguments: JSON.stringify(tc.input) },
+          function: { name: tc.name, arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input ?? {}) },
         })),
       });
-    } else if (toolResultParts.length === 0) {
-      // Build content — either plain string (no images) or multipart array (with images)
+    }
+
+    for (const tr of toolResultParts) {
+      const content = tr.content
+        .map((p) => {
+          if (p instanceof vscode.LanguageModelTextPart) return p.value;
+          if (isTextPartLike(p)) return p.value;
+          return '';
+        })
+        .join('');
+      result.push({ role: 'tool', content, tool_call_id: tr.callId });
+    }
+
+    if (toolCallParts.length === 0 && toolResultParts.length === 0) {
       if (imageParts.length > 0) {
         const contentParts: OpenAIContentPart[] = [];
         if (textParts.length > 0) {
           contentParts.push({ type: 'text', text: textParts.join('') });
         }
         for (const img of imageParts) {
-          contentParts.push({
-            type: 'image_url',
-            image_url: { url: toDataUrl(img.data, img.mimeType) },
-          });
+          contentParts.push({ type: 'image_url', image_url: { url: toDataUrl(img.data, img.mimeType) } });
         }
-        result.push({
-          role: isUser ? 'user' : 'assistant',
-          content: contentParts,
-        });
+        result.push({ role: isUser ? 'user' : 'assistant', content: contentParts });
       } else {
-        result.push({
-          role: isUser ? 'user' : 'assistant',
-          content: textParts.join(''),
-        });
+        result.push({ role: isUser ? 'user' : 'assistant', content: textParts.join('') });
       }
     }
   }
@@ -155,14 +269,12 @@ function estimateTokens(text: string): number {
 }
 
 function calculateDelay(attempt: number, initialDelayMs: number, maxDelayMs: number): number {
-  // Exponential backoff with jitter
   const exponentialDelay = initialDelayMs * Math.pow(2, attempt);
   const jitter = Math.random() * 0.3 * exponentialDelay;
   return Math.min(exponentialDelay + jitter, maxDelayMs);
 }
 
 function isRetryableError(status: number): boolean {
-  // Retry on 429 (rate limit), 500, 502, 503, 504 (server errors)
   return status === 429 || (status >= 500 && status <= 504);
 }
 
@@ -172,29 +284,23 @@ async function fetchWithRetry(
   retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG
 ): Promise<Response> {
   let lastError: Error | null = null;
-  
+
   for (let attempt = 0; attempt <= retryConfig.maxRetries; attempt++) {
     try {
       const response = await fetch(url, init);
-      
+
       if (response.ok) {
         return response;
       }
-      
+
       const status = response.status;
       const errorBody = await response.text().catch(() => 'Unknown error');
 
-      // Try to extract a human-readable message from JSON error responses
       let errorMessage = errorBody;
       try {
         const parsed = JSON.parse(errorBody);
-        // OpenAI-compatible: { error: { message } } or { message } or { msg }
-        errorMessage =
-          parsed?.error?.message ??
-          parsed?.message ??
-          parsed?.msg ??
-          errorBody;
-      } catch { /* not JSON — use raw body */ }
+        errorMessage = parsed?.error?.message ?? parsed?.message ?? parsed?.msg ?? errorBody;
+      } catch { /* not JSON */ }
 
       if (status === 401) {
         throw new Error(
@@ -204,16 +310,11 @@ async function fetchWithRetry(
         );
       }
 
-      // Image/vision not supported by this model
       if (status === 400) {
         const lower = errorMessage.toLowerCase();
         if (
-          lower.includes('image') ||
-          lower.includes('vision') ||
-          lower.includes('multimodal') ||
-          lower.includes('does not support') ||
-          lower.includes('unsupported') ||
-          lower.includes('invalid content type')
+          lower.includes('image') || lower.includes('vision') || lower.includes('multimodal') ||
+          lower.includes('does not support') || lower.includes('unsupported') || lower.includes('invalid content type')
         ) {
           throw new Error(
             `Custom LLM: This model does not support image input.\n` +
@@ -226,27 +327,27 @@ async function fetchWithRetry(
       if (!isRetryableError(status)) {
         throw new Error(`Custom LLM (${status}): ${errorMessage}`);
       }
-      
+
       lastError = new Error(`Custom LLM (${status}): ${errorMessage}`);
-      
+
       if (attempt < retryConfig.maxRetries) {
         const delay = calculateDelay(attempt, retryConfig.initialDelayMs, retryConfig.maxDelayMs);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        throw error; // Don't retry on cancellation
+        throw error;
       }
-      
+
       lastError = error instanceof Error ? error : new Error(String(error));
-      
+
       if (attempt < retryConfig.maxRetries) {
         const delay = calculateDelay(attempt, retryConfig.initialDelayMs, retryConfig.maxDelayMs);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
-  
+
   throw lastError || new Error('Request failed after all retries');
 }
 
@@ -256,7 +357,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeLanguageModelChatInformation = this._onDidChange.event;
 
-  constructor() {
+  constructor(private statusBar?: vscode.StatusBarItem) {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('customLlm')) {
         this._onDidChange.fire();
@@ -264,19 +365,25 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     });
   }
 
-  // Called by VS Code during model discovery
   provideLanguageModelChatInformation(
-    _options: vscode.PrepareLanguageModelChatModelOptions,
+    options: vscode.PrepareLanguageModelChatModelOptions,
     _token: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.LanguageModelChatInformation[]> {
     const cfg = vscode.workspace.getConfiguration('customLlm');
     const modelConfigs: ModelConfig[] = cfg.get('models') ?? [];
-    const providers: Array<{ name: string; baseUrl: string }> = cfg.get('providers') ?? [];
+    const providers: Array<{ name: string; baseUrl: string; apiKey?: string }> = cfg.get('providers') ?? [];
 
-    // Build a map: providerUrl → provider name for display
+    if (options.silent) {
+      const hasUsableProvider = providers.some(p => !!p.baseUrl);
+      if (!hasUsableProvider || modelConfigs.length === 0) {
+        logLine(`provideLanguageModelChatInformation(silent=true): no providers/models configured, returning []`);
+        return [];
+      }
+    }
+
     const nameMap = new Map(providers.map(p => [p.baseUrl, p.name]));
 
-    return modelConfigs.map((m) => {
+    const result = modelConfigs.map((m) => {
       const providerLabel = nameMap.get(m.providerUrl ?? '')
         ?? (m.providerUrl?.includes('dashscope') ? 'Alibaba DashScope' : 'Custom LLM');
       return {
@@ -288,15 +395,13 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
         maxInputTokens: m.maxInputTokens,
         maxOutputTokens: m.maxOutputTokens,
         showInModelPicker: true,
-        capabilities: {
-          toolCalling: true,
-          imageInput: true,
-        },
+        capabilities: { toolCalling: true },
       };
     });
+    logLine(`provideLanguageModelChatInformation(silent=${options.silent}): returning ${result.length} models`);
+    return result;
   }
 
-  // Response is streamed via progress.report(), return value is void
   async provideLanguageModelChatResponse(
     model: vscode.LanguageModelChatInformation,
     messages: readonly vscode.LanguageModelChatRequestMessage[],
@@ -304,22 +409,34 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     token: vscode.CancellationToken
   ): Promise<void> {
+    logLine(`← provideLanguageModelChatResponse called: model=${model.id}, msgs=${messages.length}, tools=${options.tools?.length ?? 0}`);
     const cfg = vscode.workspace.getConfiguration('customLlm');
 
-    // Look up which provider this model belongs to
     const models: ModelConfig[] = cfg.get('models') ?? [];
     const providers: Array<{ name: string; baseUrl: string; apiKey: string }> = cfg.get('providers') ?? [];
     const modelCfg = models.find(m => m.id === model.id);
+    if (!modelCfg) {
+      logLine(`WARN: no ModelConfig found for model.id='${model.id}'. Configured model ids: [${models.map(m => m.id).join(', ')}]`);
+    }
 
-    // Find provider by matching providerUrl; fall back to first provider
-    const provider = modelCfg
-      ? providers.find(p => p.baseUrl === modelCfg.providerUrl) ?? providers[0]
-      : providers[0];
+    let provider = modelCfg
+      ? providers.find(p => p.baseUrl === modelCfg.providerUrl)
+      : undefined;
+    if (!provider && providers.length === 1) {
+      provider = providers[0];
+      if (modelCfg) {
+        logLine(`[${model.id}] providerUrl mismatch but only 1 provider configured — using it`);
+      }
+    }
+    if (!provider) {
+      const msg = `Custom LLM: model '${model.id}' has no matching provider. Run "Custom LLM: Refresh model list from API" to fix.`;
+      logLine(`✗ ${msg}`);
+      throw new Error(msg);
+    }
 
-    const baseUrl: string = provider?.baseUrl ?? '';
-    const apiKey: string  = provider?.apiKey  ?? '';
+    const baseUrl: string = provider.baseUrl;
+    const apiKey: string  = provider.apiKey ?? '';
 
-    // Prepare tools if provided
     let tools: OpenAITool[] | undefined;
     if (options.tools && options.tools.length > 0) {
       tools = options.tools.map(tool => ({
@@ -332,18 +449,36 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
       }));
     }
 
+    const safeMaxTokens = Math.min(model.maxOutputTokens, 8192);
+
+    for (let mi = 0; mi < messages.length; mi++) {
+      const m = messages[mi];
+      const partKinds = m.content.map((p) => {
+        if (p instanceof vscode.LanguageModelTextPart) return 'TextPart';
+        if (p instanceof vscode.LanguageModelDataPart) return 'DataPart';
+        if (p instanceof vscode.LanguageModelToolCallPart) return 'ToolCallPart';
+        if (p instanceof vscode.LanguageModelToolResultPart) return 'ToolResultPart';
+        if (isToolCallPartLike(p)) return 'ToolCallLike';
+        if (isToolResultPartLike(p)) return 'ToolResultLike';
+        return partDebugInfo(p);
+      });
+      logLine(`[incoming] msg[${mi}] role=${m.role} parts=${partKinds.join(', ')}`);
+    }
+
+    const oaiMessages = toOpenAIMessages(messages);
     const body = JSON.stringify({
       model: model.id,
-      messages: toOpenAIMessages(messages),
+      messages: oaiMessages,
       stream: true,
-      max_tokens: model.maxOutputTokens,
+      max_tokens: safeMaxTokens,
+      stream_options: { include_usage: true },
       ...(tools && tools.length > 0 ? { tools } : {}),
     });
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-DashScope-SSE': 'enable',
-    };
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (baseUrl.includes('dashscope')) {
+      headers['X-DashScope-SSE'] = 'enable';
+    }
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`;
     }
@@ -351,6 +486,30 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     const abortController = new AbortController();
     const cancelDisposable = token.onCancellationRequested(() => abortController.abort());
 
+    const reqId = Math.random().toString(36).slice(2, 8);
+    const stats = {
+      contentChunks: 0,
+      contentChars: 0,
+      reasoningChunks: 0,
+      reasoningChars: 0,
+      toolCallChunks: 0,
+      finishReason: null as string | null,
+      malformedChunks: 0,
+      summaryLogged: false,
+      usage: null as { promptTokens: number; completionTokens: number; reasoningTokens: number } | null,
+    };
+    const startedAt = Date.now();
+
+    logLine(`[${reqId}] → POST ${baseUrl}/chat/completions  model=${model.id}  msgs=${messages.length}  tools=${tools?.length ?? 0}  max_tokens=${safeMaxTokens}`);
+    oaiMessages.forEach((m: any, i: number) => {
+      const contentLen = typeof m.content === 'string' ? m.content.length : Array.isArray(m.content) ? `${m.content.length}parts` : 0;
+      logLine(`[${reqId}] msg[${i}] role=${m.role} contentLen=${contentLen} tool_calls=${m.tool_calls?.length ?? 0} tool_call_id=${m.tool_call_id ?? '-'}`);
+    });
+    if (tools && tools.length > 0) {
+      logLine(`[${reqId}] tools (${tools.length}): ${tools.map((t: any) => t.function?.name).join(', ')}`);
+    }
+
+    this.statusBar && (this.statusBar.text = '$(sync~spin) Custom LLM');
     let response: Response;
     try {
       response = await fetchWithRetry(`${baseUrl}/chat/completions`, {
@@ -359,12 +518,17 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
         body,
         signal: abortController.signal,
       });
+    } catch (e) {
+      logLine(`[${reqId}] ✗ fetch failed: ${e instanceof Error ? e.message : String(e)}`);
+      this.statusBar && (this.statusBar.text = '$(warning) Custom LLM');
+      throw e;
     } finally {
       cancelDisposable.dispose();
     }
 
     if (!response.ok || !response.body) {
       const err = await response.text();
+      logLine(`[${reqId}] ✗ HTTP ${response.status}: ${err.substring(0, 4000)}`);
       throw new Error(`Custom LLM (${response.status}): ${err}`);
     }
 
@@ -372,8 +536,17 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     const reader = response.body.getReader();
     let buffer = '';
 
-    // Accumulate tool call chunks — OpenAI streams arguments in pieces
-    // key = index (0, 1, 2…), value = accumulated call data
+    const IDLE_MS = 60_000;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const resetIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        logLine(`[${reqId}] ✗ idle timeout (${IDLE_MS}ms) — aborting`);
+        abortController.abort();
+      }, IDLE_MS);
+    };
+    resetIdle();
+
     const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
 
     // State machine for filtering <think>...</think> blocks (Qwen3 extended thinking).
@@ -388,6 +561,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
         const { done, value } = await reader.read();
         if (done) break;
         if (token.isCancellationRequested) break;
+        resetIdle();
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -399,42 +573,67 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
 
           const data = trimmed.slice(5).trim();
           if (data === '[DONE]') {
-            // Flush any remaining tool calls
             for (const [, call] of pendingToolCalls) {
+              if (!call.name) {
+                logLine(`[${reqId}] ⚠ skipping tool_call with empty name (id=${call.id})`);
+                continue;
+              }
               try {
                 const input = JSON.parse(call.arguments || '{}');
+                logLine(`[${reqId}] tool_call (DONE): id=${call.id} name=${call.name}`);
                 progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, input));
-              } catch {
+              } catch (e) {
+                logLine(`[${reqId}] tool_call bad JSON (DONE): id=${call.id} name=${call.name} err=${e instanceof Error ? e.message : e}`);
                 progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, {}));
               }
             }
+            logSummary(reqId, stats, startedAt, model);
             return;
           }
 
           try {
             const chunk: OpenAIStreamChunk = JSON.parse(data);
-            const choice = chunk.choices[0];
+
+            if (chunk.usage) {
+              stats.usage = {
+                promptTokens:     chunk.usage.prompt_tokens     ?? 0,
+                completionTokens: chunk.usage.completion_tokens ?? 0,
+                reasoningTokens:  chunk.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+              };
+            }
+
+            const choice = chunk.choices?.[0];
             if (!choice) continue;
 
-            // Text content — filter out <think>…</think> blocks emitted by Qwen3
+            if (choice.finish_reason) {
+              stats.finishReason = choice.finish_reason;
+            }
+
+            const reasoning = choice.delta?.reasoning_content;
+            if (reasoning) {
+              stats.reasoningChunks++;
+              stats.reasoningChars += reasoning.length;
+            }
+
             const content = choice.delta?.content;
             if (content) {
+              stats.contentChunks++;
+              stats.contentChars += content.length;
+
               if (thinkState === 'pass') {
                 progress.report(new vscode.LanguageModelTextPart(content));
               } else {
                 thinkBuf += content;
                 if (thinkState === 'detect') {
-                  const trimmed = thinkBuf.trimStart();
-                  if (trimmed.startsWith('<think>')) {
+                  const tb = thinkBuf.trimStart();
+                  if (tb.startsWith('<think>')) {
                     thinkState = 'skip';
-                    thinkBuf = trimmed.slice('<think>'.length);
-                  } else if (trimmed.length > 0 && !('<think>'.startsWith(trimmed.slice(0, 7)))) {
-                    // Definitely not a <think> block — emit buffered content and switch to pass
+                    thinkBuf = tb.slice('<think>'.length);
+                  } else if (tb.length > 0 && !('<think>'.startsWith(tb.slice(0, 7)))) {
                     thinkState = 'pass';
                     progress.report(new vscode.LanguageModelTextPart(thinkBuf));
                     thinkBuf = '';
                   } else if (thinkBuf.length > 30) {
-                    // Safety: too much buffering without deciding — emit and pass through
                     thinkState = 'pass';
                     progress.report(new vscode.LanguageModelTextPart(thinkBuf));
                     thinkBuf = '';
@@ -443,20 +642,18 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
                   const endIdx = thinkBuf.indexOf('</think>');
                   if (endIdx !== -1) {
                     thinkState = 'pass';
-                    // Strip leading newlines that models often add after </think>
                     const after = thinkBuf.slice(endIdx + '</think>'.length).replace(/^\n{1,2}/, '');
                     thinkBuf = '';
                     if (after) progress.report(new vscode.LanguageModelTextPart(after));
                   } else if (thinkBuf.length > 200) {
-                    // Keep only the tail so we can still detect </think> split across chunks
                     thinkBuf = thinkBuf.slice(-20);
                   }
                 }
               }
             }
 
-            // Tool call chunks — accumulate by index
             if (choice.delta?.tool_calls) {
+              stats.toolCallChunks++;
               for (const tc of choice.delta.tool_calls) {
                 const idx = tc.index ?? 0;
                 if (!pendingToolCalls.has(idx)) {
@@ -469,30 +666,45 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
               }
             }
 
-            // When model signals it's done calling tools — report all accumulated calls
             if (choice.finish_reason === 'tool_calls') {
               for (const [, call] of pendingToolCalls) {
+                if (!call.name) {
+                  logLine(`[${reqId}] ⚠ skipping tool_call with empty name (id=${call.id})`);
+                  continue;
+                }
                 try {
                   const input = JSON.parse(call.arguments || '{}');
+                  logLine(`[${reqId}] tool_call: id=${call.id} name=${call.name} args=${call.arguments.slice(0, 200)}`);
                   progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, input));
-                } catch {
+                } catch (e) {
+                  logLine(`[${reqId}] tool_call bad JSON: id=${call.id} name=${call.name} err=${e instanceof Error ? e.message : e}`);
                   progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, {}));
                 }
               }
               pendingToolCalls.clear();
+              logSummary(reqId, stats, startedAt, model, 'tool_calls');
               return;
             }
           } catch {
-            // Malformed SSE chunk — skip
+            stats.malformedChunks++;
           }
         }
       }
+    } catch (e) {
+      if (e instanceof Error && e.name !== 'AbortError') {
+        logLine(`[${reqId}] ✗ stream error: ${e.message}`);
+      }
+      logSummary(reqId, stats, startedAt, model, e instanceof Error ? e.name : 'error');
+      this.statusBar && (this.statusBar.text = '$(warning) Custom LLM');
+      throw e;
     } finally {
+      if (idleTimer) clearTimeout(idleTimer);
       reader.releaseLock();
+      this.statusBar && (this.statusBar.text = '$(check) Custom LLM');
     }
+    logSummary(reqId, stats, startedAt, model, token.isCancellationRequested ? 'cancelled' : 'done');
   }
 
-  // Token counting — first parameter is the model (not text!)
   async provideTokenCount(
     _model: vscode.LanguageModelChatInformation,
     text: string | vscode.LanguageModelChatRequestMessage,

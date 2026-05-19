@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { logLine } from './provider';
 
 /**
  * Chat participant @qwen — routes all requests through our registered
@@ -73,6 +74,10 @@ export function registerChatParticipant(context: vscode.ExtensionContext): vscod
       }
 
       messages.push(vscode.LanguageModelChatMessage.User(finalUserText));
+
+      // Diagnostic: log entry into participant so we can see if Copilot Chat
+      // ever reached @qwen vs. silently routing to gpt-4o-mini.
+      logLine(`[participant] @qwen request: prompt="${request.prompt.slice(0, 80).replace(/\n/g, ' ')}" selectedModel=${model.id} availableModels=${models.length}`);
 
       // Show which model is responding
       stream.markdown(`*[${model.name}]*\n\n`);

@@ -1,32 +1,46 @@
 {
   "name": "vscode-custom-llm-provider",
   "displayName": "Custom LLM Provider",
-  "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, …) to GitHub Copilot Chat in VS Code.",
-  "version": "0.4.5",
+  "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, ...) to GitHub Copilot Chat in VS Code.",
+  "version": "0.4.8",
   "publisher": "MartinRiha",
   "author": {
-    "name": "Martin Říha",
+    "name": "Martin Riha",
     "url": "https://github.com/milhaus123"
   },
   "engines": {
-    "vscode": "^1.104.0"
+    "vscode": "^1.119.0"
   },
-  "categories": ["AI", "Other"],
-  "keywords": ["copilot", "llm", "alibaba", "qwen", "dashscope", "openrouter", "ai", "chat"],
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "copilot",
+    "llm",
+    "alibaba",
+    "qwen",
+    "dashscope",
+    "openrouter",
+    "ai",
+    "chat"
+  ],
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/milhaus123/vscode-custom-llm-provider"
   },
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "languageModelChatProviders": [
       {
         "vendor": "custom-llm",
         "displayName": "Custom LLM",
-        "managementCommand": "custom-llm.addProvider"
+        "managementCommand": "custom-llm.manageProviders"
       }
     ],
     "chatParticipants": [
@@ -49,6 +63,10 @@
       {
         "command": "custom-llm.refreshModels",
         "title": "Custom LLM: Refresh model list from API"
+      },
+      {
+        "command": "custom-llm.testConnection",
+        "title": "Custom LLM: Test connection"
       }
     ],
     "configuration": {
@@ -60,11 +78,24 @@
           "description": "List of OpenAI-compatible providers. Each item: { name, baseUrl, apiKey }",
           "items": {
             "type": "object",
-            "required": ["name", "baseUrl", "apiKey"],
+            "required": [
+              "name",
+              "baseUrl",
+              "apiKey"
+            ],
             "properties": {
-              "name":    { "type": "string", "description": "Display name, e.g. 'Alibaba DashScope'" },
-              "baseUrl": { "type": "string", "description": "Base URL ending with /v1" },
-              "apiKey":  { "type": "string", "description": "API key (sk-...)" }
+              "name": {
+                "type": "string",
+                "description": "Display name, e.g. Alibaba DashScope"
+              },
+              "baseUrl": {
+                "type": "string",
+                "description": "Base URL ending with /v1"
+              },
+              "apiKey": {
+                "type": "string",
+                "description": "API key (sk-...)"
+              }
             }
           }
         },
@@ -92,8 +123,8 @@
     "watch": "tsc -watch -p ./"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/vscode": "^1.104.0",
-    "typescript": "^5.4.0"
+    "@types/node": "^25.7.0",
+    "@types/vscode": "^1.119.0",
+    "typescript": "^6.0.3"
   }
 }

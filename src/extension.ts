@@ -88,7 +88,7 @@ async function migrateLegacySettings(): Promise<boolean> {
   if (!legacyUrl && !legacyKey) { return false; }
   const providers = getProviders();
   if (providers.length > 0) {
-    // Already have providers — just clear old keys
+    // Already have providers -- just clear old keys
     await cfg.update('baseUrl', undefined, vscode.ConfigurationTarget.Global);
     await cfg.update('apiKey',  undefined, vscode.ConfigurationTarget.Global);
     return false;
@@ -111,10 +111,54 @@ async function migrateLegacySettings(): Promise<boolean> {
 async function fetchModelsForProvider(provider: ProviderConfig): Promise<ModelConfig[] | null> {
   if (!provider.apiKey) { return null; }
 
+  const baseUrl = provider.baseUrl.replace(/\/$/, '');
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${provider.apiKey}`,
+  };
+
   try {
-    const url = `${provider.baseUrl.replace(/\/$/, '')}/models`;
-    const res = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${provider.apiKey}` },
+    // 1. Try /model/info first (LiteLLM endpoint -- richer metadata)
+    const infoUrl = `${baseUrl}/model/info`;
+    const infoRes = await fetch(infoUrl, {
+      headers,
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (infoRes.ok) {
+      const infoJson = await infoRes.json() as {
+        data?: Array<{
+          model_name?: string;
+          model_info?: {
+            max_tokens?: number;
+            max_input_tokens?: number;
+            supports_tool_choice?: boolean;
+            supports_function_calling?: boolean;
+          };
+        }>;
+      };
+
+      if (Array.isArray(infoJson?.data) && infoJson.data.length > 0) {
+        return infoJson.data
+          .filter(m => !!m.model_name)
+          .map(m => {
+            const id = m.model_name!;
+            const known = getKnownLimits(id);
+            const info = m.model_info ?? {};
+            return {
+              id,
+              name: toDisplayName(id),
+              providerUrl: provider.baseUrl,
+              maxInputTokens:  info.max_input_tokens ?? known.maxInputTokens,
+              maxOutputTokens: info.max_tokens       ?? known.maxOutputTokens,
+            };
+          });
+      }
+    }
+
+    // 2. Fallback to /models (standard OpenAI endpoint)
+    const modelsUrl = `${baseUrl}/models`;
+    const res = await fetch(modelsUrl, {
+      headers,
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) { return null; }
@@ -143,7 +187,7 @@ async function discoverAllModels(silent = false): Promise<void> {
   const providers = getProviders();
 
   if (providers.length === 0) {
-    // No providers configured — keep existing models or load defaults
+    // No providers configured -- keep existing models or load defaults
     if (getModels().length === 0) {
       await saveModels(DEFAULT_MODELS.map(m => ({ ...m, providerUrl: DEFAULT_PROVIDER.baseUrl })));
     }
@@ -177,65 +221,54 @@ async function discoverAllModels(silent = false): Promise<void> {
   }
 }
 
-// ── Copilot picker sync ────────────────────────────────────────────────────────
+// ── Copilot BYOK cleanup ───────────────────────────────────────────────────────
 
-async function syncCopilotPickerModels(): Promise<void> {
-  const models = getModels();
-  const providers = getProviders();
-
-  // Build a map: providerUrl → apiKey for fast lookup
-  const keyMap = new Map(providers.map(p => [p.baseUrl, p.apiKey]));
-
-  // We MUST merge into existing customOAIModels rather than overwrite — the
-  // user (or another extension) may have configured their own BYOK models
-  // there. Overwriting was clobbering them and made the model picker confusing.
+async function cleanupLegacyByokEntries(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration('github.copilot.chat');
-  const existing = (cfg.get<Record<string, object>>('customOAIModels')) ?? {};
+  const existing = cfg.get<Record<string, object>>('customOAIModels');
+  if (!existing || Object.keys(existing).length === 0) { return; }
 
-  // Track which IDs belong to *our* configured models. We only touch those;
-  // anything else in `existing` is left alone so we never wipe foreign entries.
-  const ourModelIds = new Set(models.map(m => m.id));
-  const merged: Record<string, object> = {};
+  const ourModelIds = new Set(getModels().map(m => m.id));
+  const cleaned: Record<string, object> = {};
+  let removed = 0;
 
   for (const [id, val] of Object.entries(existing)) {
-    if (!ourModelIds.has(id)) {
-      merged[id] = val;
+    if (ourModelIds.has(id)) {
+      removed++;
+      continue;
     }
+    cleaned[id] = val;
   }
 
-  for (const model of models) {
-    const apiKey = keyMap.get(model.providerUrl) ?? '';
-    merged[model.id] = {
-      name: model.name,
-      url: model.providerUrl,
-      toolCalling: true,
-      maxInputTokens: model.maxInputTokens,
-      maxOutputTokens: model.maxOutputTokens,
-      requiresAPIKey: apiKey.length > 0,
-    };
-  }
+  if (removed === 0) { return; }
 
   try {
-    await cfg.update('customOAIModels', merged, vscode.ConfigurationTarget.Global);
-  } catch { /* older VS Code */ }
+    await cfg.update('customOAIModels', cleaned, vscode.ConfigurationTarget.Global);
+  } catch { /* older VS Code or no permission */ }
 }
 
 // ── Commands ───────────────────────────────────────────────────────────────────
 
 async function promptForApiKey(providerName: string, currentValue = ''): Promise<string | undefined> {
   return vscode.window.showInputBox({
-    title: `Custom LLM — API Key for "${providerName}"`,
-    prompt: 'Paste your API key (e.g. sk-…). Required for most providers — without it, model discovery and requests will fail.',
+    title: `Custom LLM -- API Key for "${providerName}"`,
+    prompt: 'Paste your API key (e.g. sk-...). Required for most providers.',
     placeHolder: 'sk-...',
     password: true,
     value: currentValue,
-    ignoreFocusOut: true, // critical: keeps the box open when VS Code's native UI closes after the previous step
+    ignoreFocusOut: true,
   });
 }
 
 async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
+  // VS Code 1.104+ -- when this command is invoked as a managementCommand
+  // from the Copilot model-picker panel, the webview keeps focus and immediately
+  // dismisses any showInputBox that opens synchronously. A short settle-time
+  // lets VS Code close the picker panel before we show our native dialogs.
+  await new Promise<void>(resolve => setTimeout(resolve, 200));
+
   const name = await vscode.window.showInputBox({
-    title: 'Custom LLM — Provider name',
+    title: 'Custom LLM -- Provider name',
     prompt: 'e.g. "Alibaba DashScope" or "OpenRouter"',
     placeHolder: 'My Provider',
     ignoreFocusOut: true,
@@ -243,7 +276,7 @@ async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
   if (!name) { return; }
 
   const baseUrl = await vscode.window.showInputBox({
-    title: 'Custom LLM — Base URL',
+    title: 'Custom LLM -- Base URL',
     prompt: 'OpenAI-compatible endpoint URL (must end with /v1)',
     placeHolder: 'https://coding-intl.dashscope.aliyuncs.com/v1',
     ignoreFocusOut: true,
@@ -263,8 +296,7 @@ async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
   }
   await saveProviders(providers);
 
-  // Safety net — if the API key prompt was skipped / dismissed by a VS Code
-  // UI transition (known with the gear-icon management flow in 1.104+),
+  // Safety net -- if the API key prompt was dismissed by a VS Code UI transition,
   // offer a second chance via notification action.
   if (!apiKey) {
     vscode.window.showWarningMessage(
@@ -280,26 +312,31 @@ async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
         current[i].apiKey = key;
         await saveProviders(current);
         await discoverAllModels(false);
-        await syncCopilotPickerModels();
+        await cleanupLegacyByokEntries();
         provider?.notifyModelsChanged();
       }
     });
   } else {
-    vscode.window.showInformationMessage(`Custom LLM: Provider "${name}" saved. Fetching models…`);
+    vscode.window.showInformationMessage(`Custom LLM: Provider "${name}" saved. Fetching models...`);
   }
 
   await discoverAllModels(false);
-  await syncCopilotPickerModels();
+  await cleanupLegacyByokEntries();
   provider?.notifyModelsChanged();
 }
 
 async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
+  // VS Code 1.104+ -- when invoked as managementCommand from the Copilot
+  // model-picker (both gear icon and "Add Models" flows) the webview keeps
+  // focus and can dismiss native dialogs opened synchronously. A short
+  // settle-time lets VS Code close the picker before we show our UI.
+  await new Promise<void>(resolve => setTimeout(resolve, 200));
+
   const providers = getProviders();
   if (providers.length === 0) {
-    const add = await vscode.window.showInformationMessage(
-      'No providers configured yet.', 'Add provider'
-    );
-    if (add) { await cmdAddProvider(); }
+    // Skip the info-message toast; jump straight to the add wizard so the
+    // QuickPick / InputBox flow works correctly from the picker context.
+    await cmdAddProvider(provider);
     return;
   }
 
@@ -307,25 +344,25 @@ async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
     ...providers.map((p, i) => ({
       label: p.name,
       description: p.baseUrl,
-      detail: p.apiKey ? '🔑 API key set' : '⚠️ No API key',
+      detail: p.apiKey ? 'API key set' : 'No API key',
       index: i,
     })),
     { label: '$(add) Add new provider', description: '', detail: '', index: -1 },
   ];
 
   const pick = await vscode.window.showQuickPick(items, {
-    title: 'Custom LLM — Manage providers',
-    placeHolder: 'Select a provider to edit or remove',
+    title: 'Custom LLM -- Manage providers',
+    placeHolder: 'Select a provider to edit, or add a new one',
   });
   if (!pick) { return; }
 
   if (pick.index === -1) {
-    await cmdAddProvider();
+    await cmdAddProvider(provider);
     return;
   }
 
   const action = await vscode.window.showQuickPick(
-    ['Edit', 'Remove'],
+    ['Edit name', 'Edit endpoint URL', 'Edit API key', 'Remove'],
     { title: `Provider: ${pick.label}` }
   );
   if (!action) { return; }
@@ -333,41 +370,174 @@ async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
   if (action === 'Remove') {
     providers.splice(pick.index, 1);
     await saveProviders(providers);
-    // Remove models that belonged to this provider
-    const removed = pick.description ?? '';
-    const remaining = getModels().filter(m => m.providerUrl !== removed);
+    const removedUrl = pick.description ?? '';
+    const remaining = getModels().filter(m => m.providerUrl !== removedUrl);
     await saveModels(remaining);
     vscode.window.showInformationMessage(`Custom LLM: Provider "${pick.label}" removed.`);
-  } else {
-    // Edit — re-use add flow pre-filled
+
+  } else if (action === 'Edit name') {
     const p = providers[pick.index];
-    const apiKey = await vscode.window.showInputBox({
-      title: `Edit "${p.name}" — API Key`,
-      value: p.apiKey,
-      password: true,
+    const newName = await vscode.window.showInputBox({
+      title: 'Edit provider name',
+      value: p.name,
+      ignoreFocusOut: true,
     });
+    if (newName === undefined) { return; }
+    providers[pick.index].name = newName;
+    await saveProviders(providers);
+    vscode.window.showInformationMessage(`Custom LLM: Provider renamed to "${newName}".`);
+
+  } else if (action === 'Edit endpoint URL') {
+    const p = providers[pick.index];
+    const newUrl = await vscode.window.showInputBox({
+      title: `Edit endpoint URL for "${p.name}"`,
+      prompt: 'OpenAI-compatible endpoint URL (must end with /v1)',
+      value: p.baseUrl,
+      placeHolder: 'https://coding-intl.dashscope.aliyuncs.com/v1',
+      ignoreFocusOut: true,
+    });
+    if (newUrl === undefined) { return; }
+    const oldUrl = providers[pick.index].baseUrl;
+    providers[pick.index].baseUrl = newUrl;
+    await saveProviders(providers);
+    // Re-tag all models that pointed to the old URL
+    const updatedModels = getModels().map(m => (m.providerUrl === oldUrl ? { ...m, providerUrl: newUrl } : m));
+    await saveModels(updatedModels);
+    vscode.window.showInformationMessage(`Custom LLM: "${p.name}" endpoint updated. Refreshing models...`);
+    await discoverAllModels(true);
+
+  } else {
+    // Edit API key
+    const p = providers[pick.index];
+    const apiKey = await promptForApiKey(p.name, p.apiKey);
     if (apiKey === undefined) { return; }
     providers[pick.index].apiKey = apiKey;
     await saveProviders(providers);
-    vscode.window.showInformationMessage(`Custom LLM: "${p.name}" updated. Refreshing models…`);
+    vscode.window.showInformationMessage(`Custom LLM: "${p.name}" API key updated. Refreshing models...`);
     await discoverAllModels(true);
   }
 
-  await syncCopilotPickerModels();
+  await cleanupLegacyByokEntries();
   provider.notifyModelsChanged();
+}
+
+async function cmdTestConnection(): Promise<void> {
+  const providers = getProviders();
+  if (providers.length === 0) {
+    vscode.window.showWarningMessage(
+      'Custom LLM: No providers configured yet.',
+      'Add provider'
+    ).then(c => { if (c) { vscode.commands.executeCommand('custom-llm.addProvider'); } });
+    return;
+  }
+
+  // If multiple providers, let user pick one; otherwise test the only one
+  let selected: ProviderConfig;
+  if (providers.length === 1) {
+    selected = providers[0];
+  } else {
+    const pick = await vscode.window.showQuickPick(
+      providers.map((p, i) => ({
+        label: p.name,
+        description: p.baseUrl,
+        detail: p.apiKey ? 'API key set' : 'No API key',
+        index: i,
+      })),
+      { title: 'Custom LLM -- Test connection', placeHolder: 'Select provider to test' }
+    );
+    if (!pick) { return; }
+    selected = providers[pick.index];
+  }
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Custom LLM: Testing "${selected.name}"...`, cancellable: false },
+    async () => {
+      const baseUrl = selected.baseUrl.replace(/\/$/, '');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(selected.apiKey ? { 'Authorization': `Bearer ${selected.apiKey}` } : {}),
+      };
+      const t0 = Date.now();
+
+      // Step 1 -- model list (try /model/info first, then /models)
+      let modelCount = 0;
+      let endpointUsed = '';
+      try {
+        const infoRes = await fetch(`${baseUrl}/model/info`, { headers, signal: AbortSignal.timeout(8000) });
+        if (infoRes.ok) {
+          const j = await infoRes.json() as { data?: unknown[] };
+          modelCount = j?.data?.length ?? 0;
+          endpointUsed = '/model/info';
+        } else {
+          const modelsRes = await fetch(`${baseUrl}/models`, { headers, signal: AbortSignal.timeout(8000) });
+          if (modelsRes.ok) {
+            const j = await modelsRes.json() as { data?: unknown[] };
+            modelCount = j?.data?.length ?? 0;
+            endpointUsed = '/models';
+          }
+        }
+      } catch (e) {
+        vscode.window.showErrorMessage(
+          `Custom LLM "${selected.name}" -- unreachable: ${e instanceof Error ? e.message : String(e)}`
+        );
+        return;
+      }
+
+      // Step 2 -- quick ping (tiny chat request to verify the model responds)
+      let pingMs = -1;
+      const models = getModels().filter(m => m.providerUrl === selected.baseUrl);
+      if (models.length > 0) {
+        const pingModel = models[0];
+        const t1 = Date.now();
+        try {
+          const pingRes = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              model: pingModel.id,
+              messages: [{ role: 'user', content: 'Reply with exactly the word: pong' }],
+              max_tokens: 8,
+              stream: false,
+            }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (pingRes.ok) { pingMs = Date.now() - t1; }
+        } catch { /* ping is best-effort */ }
+      }
+
+      const listMs = Date.now() - t0 - (pingMs > 0 ? pingMs : 0);
+      const pingInfo = pingMs >= 0 ? ` / ping ${pingMs}ms` : '';
+
+      if (modelCount > 0) {
+        vscode.window.showInformationMessage(
+          `Custom LLM "${selected.name}" -- ${modelCount} models via ${endpointUsed} (${listMs}ms)${pingInfo}`
+        );
+      } else {
+        vscode.window.showWarningMessage(
+          `Custom LLM "${selected.name}" -- server reachable but returned 0 models. Check base URL and API key.`
+        );
+      }
+    }
+  );
 }
 
 // ── Activate ───────────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
-  const provider = new CustomLlmProvider();
+  const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBar.text = '$(check) Custom LLM';
+  statusBar.tooltip = 'Custom LLM Provider';
+  statusBar.command = 'custom-llm.manageProviders';
+  statusBar.show();
+  const provider = new CustomLlmProvider(statusBar);
   const registration = vscode.lm.registerLanguageModelChatProvider('custom-llm', provider);
 
-  // Startup sequence: migrate legacy → discover → sync picker
+  // Startup sequence: migrate legacy settings, discover models, clean up stale
+  // BYOK entries left by versions <= 0.4.6.
   (async () => {
     await migrateLegacySettings();
     await discoverAllModels(true);
-    await syncCopilotPickerModels();
+    await cleanupLegacyByokEntries();
     setTimeout(() => provider.notifyModelsChanged(), 2000);
   })();
 
@@ -380,32 +550,28 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   const refreshCmd = vscode.commands.registerCommand('custom-llm.refreshModels', async () => {
-    vscode.window.showInformationMessage('Custom LLM: Fetching models from all providers…');
+    vscode.window.showInformationMessage('Custom LLM: Fetching models from all providers...');
     await discoverAllModels(false);
-    await syncCopilotPickerModels();
+    await cleanupLegacyByokEntries();
     provider.notifyModelsChanged();
   });
 
+  const testConnectionCmd = vscode.commands.registerCommand(
+    'custom-llm.testConnection', () => cmdTestConnection()
+  );
+
   const cfgWatcher = vscode.workspace.onDidChangeConfiguration(e => {
     if (e.affectsConfiguration('customLlm.providers')) {
-      // Providers list changed (e.g. edited directly in settings.json) —
-      // re-discover models from all providers, then notify.
-      discoverAllModels(true).then(async () => {
-        await syncCopilotPickerModels();
+      discoverAllModels(true).then(() => {
         provider.notifyModelsChanged();
       });
     } else if (e.affectsConfiguration('customLlm.models')) {
-      // Models list changed (most often by our own discoverAllModels write).
-      // Only refresh our LanguageModelChatProvider — do NOT call
-      // syncCopilotPickerModels here, otherwise every discovery cycle
-      // triggers another write to github.copilot.chat.customOAIModels,
-      // which fights with the user's BYOK setup and amplifies writes.
       provider.notifyModelsChanged();
     }
   });
 
   registerChatParticipant(context);
-  context.subscriptions.push(registration, addProviderCmd, manageProvidersCmd, refreshCmd, cfgWatcher, provider);
+  context.subscriptions.push(registration, addProviderCmd, manageProvidersCmd, refreshCmd, testConnectionCmd, cfgWatcher, provider);
 }
 
 export function deactivate() {}

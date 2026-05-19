@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.4.8 — May 2026
+
+### Bug fixes
+
+- **Fixed:** Clicking "Add Models" → "Custom LLM" in the Copilot model picker showed no input fields (name / URL / API key dialogs never appeared).
+  - Root cause: VS Code 1.104+ keeps the model-picker webview panel in focus when it calls the `managementCommand`. Any `showInputBox` opened synchronously inside that handler was immediately dismissed by the webview stealing focus, causing `cmdAddProvider` to silently exit before the user could type anything.
+  - Fix: added a 200 ms settle-time at the start of `cmdAddProvider` so the picker panel fully closes before the first native input dialog opens.
+
+---
+
+## v0.4.7 — May 2026
+
+### Bug fixes
+
+- **Fixed:** Custom models (e.g. `qwen35-397`) could not be invoked from Copilot Chat — Copilot looped on auxiliary `gpt-4o-mini` (`.copilotmd`) requests and the user's actual chat turn never reached our provider.
+  - Root cause: previous versions wrote our model IDs into `github.copilot.chat.customOAIModels` (Copilot's BYOK settings) **in addition** to registering them through our `LanguageModelChatProvider`. When Copilot saw the same model ID in both places it sometimes routed via the BYOK path, didn't find an API key in Copilot's own secret storage, failed silently, and kept retrying the auxiliary model selection logic in a loop.
+  - Removed the `syncCopilotPickerModels` write entirely — the chat provider already publishes its models to the picker via `provideLanguageModelChatInformation` + `showInModelPicker: true`, no second registration is needed.
+  - On startup the extension now also **cleans up** any stale entries that earlier versions left in `customOAIModels` (foreign BYOK entries are preserved).
+
+---
+
 ## v0.4.5 — April 2026
 
 ### Bug fixes
