@@ -4,8 +4,8 @@ Connect any **OpenAI-compatible** AI endpoint to GitHub Copilot Chat in Visual S
 Works out of the box with **Alibaba DashScope (Qwen)**, OpenRouter, and any other OpenAI-compatible API.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![VS Code](https://img.shields.io/badge/VS%20Code-1.104%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.4.7-brightgreen)](CHANGELOG.md)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.119%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
+[![Version](https://img.shields.io/badge/version-0.4.8-brightgreen)](CHANGELOG.md)
 
 ---
 
@@ -78,7 +78,7 @@ Type `@qwen` at the start of a message to route **that single turn** through you
 ## 🌐 Supported Endpoints
 
 | Provider | Base URL |
-|----------|----------|
+| -------- | -------- |
 | Alibaba DashScope (international) | `https://coding-intl.dashscope.aliyuncs.com/v1` |
 | Alibaba DashScope (standard) | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | OpenRouter | `https://openrouter.ai/api/v1` |
@@ -114,7 +114,7 @@ Ctrl+Shift+P → Custom LLM: Refresh model list from API
 Providers are stored in the `customLlm.providers` array. Each entry has three fields:
 
 | Field | Description |
-|-------|-------------|
+| ----- | ----------- |
 | `name` | Display name shown in info messages (e.g. `"Alibaba DashScope"`) |
 | `baseUrl` | Base URL ending with `/v1` |
 | `apiKey` | API key (`sk-…`). Leave empty if not required. |
@@ -147,7 +147,7 @@ You can also edit settings directly in **User Settings JSON** (`Ctrl+Shift+P` �
 If no providers are configured or the API is unreachable, the extension falls back to these built-in defaults (all available in [Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index)):
 
 | Model ID | Display Name | Provider | Context |
-|----------|-------------|----------|---------|
+| -------- | ----------- | -------- | ------- |
 | `qwen3-coder-plus` | Qwen3 Coder Plus | Alibaba | 128K |
 | `qwen3-coder-next` | Qwen3 Coder Next | Alibaba | 128K |
 | `qwen3-max-2026-01-23` | Qwen3 Max | Alibaba | 128K |
@@ -163,16 +163,17 @@ If no providers are configured or the API is unreachable, the extension falls ba
 ## 🛠️ Commands
 
 | Command | Description |
-|---------|-------------|
+| ------- | ----------- |
 | `Custom LLM: Add provider` | Guided wizard to add a new provider (name → URL → API key → auto-discover models) |
 | `Custom LLM: Manage providers` | List, edit, or remove configured providers |
 | `Custom LLM: Refresh model list from API` | Manually re-fetch models from all configured providers |
+| `Custom LLM: Test connection` | Send a test request to each configured provider and report the result |
 
 ---
 
 ## 📋 Requirements
 
-- Visual Studio Code `1.104.0` or later
+- Visual Studio Code `1.119.0` or later
 - GitHub Copilot extension installed and signed in (individual plan)
 - An API key for your chosen provider
 
@@ -183,7 +184,7 @@ If no providers are configured or the API is unreachable, the extension falls ba
 The extension automatically retries failed requests with **exponential backoff**:
 
 | Retry | Delay | Triggered by |
-|-------|-------|--------------|
+| ----- | ----- | ------------ |
 | 1st | ~1 second | Rate limit (429), Server errors (5xx) |
 | 2nd | ~2 seconds | Same as above |
 | 3rd | ~4 seconds | Same as above |
@@ -201,6 +202,14 @@ Maximum delay capped at 10 seconds. Request cancellation is never retried.
 ---
 
 ## 🛠️ Troubleshooting
+
+### "Add Models" → "Custom LLM" shows no input dialogs (v0.4.8)
+
+Fixed in **v0.4.8**. In earlier versions, clicking **Add Models → Custom LLM** in the Copilot model picker opened the management command, but the name / URL / API key dialogs immediately disappeared without any input. The root cause was that VS Code 1.104+ keeps the model-picker webview in focus when it invokes the `managementCommand`, causing any synchronous `showInputBox` call to be dismissed as soon as the webview stole focus back. The fix adds a short settle-time so the picker panel fully closes before the first input dialog opens.
+
+### Custom model can't be invoked — Copilot loops on `gpt-4o-mini` requests (v0.4.7)
+
+Fixed in **v0.4.7**. If a custom model appeared to do nothing and VS Code kept sending auxiliary `gpt-4o-mini` (`*.copilotmd`) requests in a loop, the extension was inadvertently writing model IDs into Copilot's BYOK settings (`github.copilot.chat.customOAIModels`). When Copilot found the same ID in both registrations, it routed via BYOK, found no API key there, and silently looped. The fix removes that secondary write entirely. The extension also cleans up stale BYOK entries left by earlier versions on startup.
 
 ### Original Copilot models reply "no input given" / context fills to ~95% in a loop
 
