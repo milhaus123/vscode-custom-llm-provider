@@ -1,11 +1,13 @@
 # Custom LLM Provider
 
 Connect any **OpenAI-compatible** AI endpoint to GitHub Copilot Chat in Visual Studio Code.  
-Works out of the box with **Alibaba DashScope (Qwen)**, **MiniMax**, OpenRouter, and any other OpenAI-compatible API.
+Works out of the box with **Alibaba DashScope (Qwen)**, **MiniMax**, **OpenRouter**, **Ollama**, **LiteLLM**, **vLLM**, and any other API that speaks the OpenAI `/v1/chat/completions` format — including self-hosted models.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.119%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
 [![Version](https://img.shields.io/badge/version-0.4.9-brightgreen)](CHANGELOG.md)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=github-sponsors)](https://github.com/sponsors/milhaus123)
 
 ---
 
@@ -84,6 +86,9 @@ Type `@qwen` at the start of a message to route **that single turn** through you
 | Alibaba DashScope (standard) | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | MiniMax ✅ | `https://api.minimaxi.chat/v1` |
 | OpenRouter | `https://openrouter.ai/api/v1` |
+| Ollama (local) | `http://localhost:11434/v1` |
+| LiteLLM proxy | `http://localhost:4000/v1` |
+| vLLM | `http://localhost:8000/v1` |
 | Any OpenAI-compatible API | custom URL |
 
 ---
