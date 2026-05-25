@@ -3,6 +3,7 @@ import { CustomLlmProvider } from './provider';
 import { registerChatParticipant } from './participant';
 
 export interface ProviderConfig {
+  id: string;           // slug, e.g. "alibaba-dashscope" — stable identity, independent of name/URL
   name: string;
   baseUrl: string;
   apiKey: string;
@@ -11,20 +12,21 @@ export interface ProviderConfig {
 export interface ModelConfig {
   id: string;
   name: string;
-  providerUrl: string;
+  providerId: string;    // references ProviderConfig.id
+  providerUrl?: string;  // @deprecated – kept only for backwards-compat migration
   maxInputTokens: number;
   maxOutputTokens: number;
 }
 
 // ── Fallback defaults ──────────────────────────────────────────────────────────
 
-const DEFAULT_PROVIDER: ProviderConfig = {
+const DEFAULT_PROVIDER: Omit<ProviderConfig, 'id'> = {
   name: 'Alibaba DashScope',
   baseUrl: 'https://coding-intl.dashscope.aliyuncs.com/v1',
   apiKey: '',
 };
 
-const DEFAULT_MODELS: Omit<ModelConfig, 'providerUrl'>[] = [
+const DEFAULT_MODELS: Omit<ModelConfig, 'providerId'>[] = [
   { id: 'qwen3-coder-plus',     name: 'Qwen3 Coder Plus',  maxInputTokens: 131072,  maxOutputTokens: 8192  },
   { id: 'qwen3-coder-next',     name: 'Qwen3 Coder Next',  maxInputTokens: 131072,  maxOutputTokens: 8192  },
   { id: 'qwen3-max-2026-01-23', name: 'Qwen3 Max',         maxInputTokens: 131072,  maxOutputTokens: 8192  },
@@ -59,10 +61,40 @@ function toDisplayName(id: string): string {
   return id.split(/[-_.]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
 }
 
+// ── Slug helpers ───────────────────────────────────────────────────────────────
+
+function toSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  // "Alibaba DashScope" → "alibaba-dashscope"
+  // "My Local LLM v2"  → "my-local-llm-v2"
+  // "OpenRouter"       → "openrouter"
+}
+
+function uniqueSlug(name: string, existingIds: string[]): string {
+  const base = toSlug(name);
+  if (!existingIds.includes(base)) { return base; }
+  for (let i = 2; i < 100; i++) {
+    const candidate = `${base}-${i}`;
+    if (!existingIds.includes(candidate)) { return candidate; }
+  }
+  return `${base}-${Date.now()}`;
+}
+
 // ── Settings helpers ───────────────────────────────────────────────────────────
 
 function getProviders(): ProviderConfig[] {
-  return vscode.workspace.getConfiguration('customLlm').get<ProviderConfig[]>('providers') ?? [];
+  const raw = vscode.workspace.getConfiguration('customLlm').get<Partial<ProviderConfig>[]>('providers') ?? [];
+  // Auto-assign slugs for any provider missing an id (pre-migration or manually edited configs)
+  const existingIds: string[] = raw.filter(p => p.id).map(p => p.id!);
+  return raw.map(p => {
+    if (p.id) { return p as ProviderConfig; }
+    const id = uniqueSlug(p.name ?? 'provider', existingIds);
+    existingIds.push(id);
+    return { ...p, id } as ProviderConfig;
+  });
 }
 
 async function saveProviders(providers: ProviderConfig[]): Promise<void> {
@@ -95,8 +127,10 @@ async function migrateLegacySettings(): Promise<boolean> {
   }
 
   // Migrate: create first provider from legacy settings
+  const name = legacyUrl.includes('dashscope') ? 'Alibaba DashScope' : 'Custom Provider';
   const provider: ProviderConfig = {
-    name: legacyUrl.includes('dashscope') ? 'Alibaba DashScope' : 'Custom Provider',
+    id: toSlug(name),
+    name,
     baseUrl: legacyUrl || DEFAULT_PROVIDER.baseUrl,
     apiKey: legacyKey,
   };
@@ -104,6 +138,43 @@ async function migrateLegacySettings(): Promise<boolean> {
   await cfg.update('baseUrl', undefined, vscode.ConfigurationTarget.Global);
   await cfg.update('apiKey',  undefined, vscode.ConfigurationTarget.Global);
   return true;
+}
+
+// ── Migration from providerUrl to providerId ───────────────────────────────────
+
+async function migrateToSlugIds(): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration('customLlm');
+  const rawProviders = cfg.get<any[]>('providers') ?? [];
+  const rawModels    = cfg.get<any[]>('models')    ?? [];
+
+  const needsProviderMigration = rawProviders.some(p => !p.id);
+  const needsModelMigration    = rawModels.some(m => m.providerUrl && !m.providerId);
+
+  if (!needsProviderMigration && !needsModelMigration) { return; }
+
+  // Assign slugs to providers that are missing one
+  const existingIds: string[] = rawProviders.filter(p => p.id).map(p => p.id);
+  const migratedProviders = rawProviders.map(p => {
+    if (p.id) { return p; }
+    const id = uniqueSlug(p.name ?? 'provider', existingIds);
+    existingIds.push(id);
+    return { ...p, id };
+  });
+
+  if (needsProviderMigration) {
+    await cfg.update('providers', migratedProviders, vscode.ConfigurationTarget.Global);
+  }
+
+  // Re-tag models: providerUrl → providerId
+  if (needsModelMigration) {
+    const urlToId = new Map<string, string>(migratedProviders.map((p: any) => [p.baseUrl, p.id]));
+    const migratedModels = rawModels.map(m => {
+      if (!m.providerUrl || m.providerId) { return m; }
+      const { providerUrl, ...rest } = m;
+      return { ...rest, providerId: urlToId.get(providerUrl) ?? '' };
+    });
+    await cfg.update('models', migratedModels, vscode.ConfigurationTarget.Global);
+  }
 }
 
 // ── Model discovery ────────────────────────────────────────────────────────────
@@ -147,7 +218,7 @@ async function fetchModelsForProvider(provider: ProviderConfig): Promise<ModelCo
             return {
               id,
               name: toDisplayName(id),
-              providerUrl: provider.baseUrl,
+              providerId: provider.id,
               maxInputTokens:  info.max_input_tokens ?? known.maxInputTokens,
               maxOutputTokens: info.max_tokens       ?? known.maxOutputTokens,
             };
@@ -173,7 +244,7 @@ async function fetchModelsForProvider(provider: ProviderConfig): Promise<ModelCo
       return {
         id: m.id,
         name: toDisplayName(m.id),
-        providerUrl: provider.baseUrl,
+        providerId: provider.id,
         maxInputTokens:  m.context_length       ?? known.maxInputTokens,
         maxOutputTokens: m.max_completion_tokens ?? known.maxOutputTokens,
       };
@@ -189,7 +260,8 @@ async function discoverAllModels(silent = false): Promise<void> {
   if (providers.length === 0) {
     // No providers configured -- keep existing models or load defaults
     if (getModels().length === 0) {
-      await saveModels(DEFAULT_MODELS.map(m => ({ ...m, providerUrl: DEFAULT_PROVIDER.baseUrl })));
+      const defaultProviderId = toSlug(DEFAULT_PROVIDER.name); // "alibaba-dashscope"
+      await saveModels(DEFAULT_MODELS.map(m => ({ ...m, providerId: defaultProviderId })));
     }
     return;
   }
@@ -287,12 +359,13 @@ async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
   if (apiKey === undefined) { return; }
 
   const providers = getProviders();
-  // Replace if same URL already exists
+  // Replace if same URL already exists (keep existing slug)
   const idx = providers.findIndex(p => p.baseUrl === baseUrl);
   if (idx >= 0) {
-    providers[idx] = { name, baseUrl, apiKey };
+    providers[idx] = { ...providers[idx], name, baseUrl, apiKey };
   } else {
-    providers.push({ name, baseUrl, apiKey });
+    const id = uniqueSlug(name, providers.map(p => p.id));
+    providers.push({ id, name, baseUrl, apiKey });
   }
   await saveProviders(providers);
 
@@ -368,10 +441,11 @@ async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
   if (!action) { return; }
 
   if (action === 'Remove') {
+    const removedId = providers[pick.index].id;
     providers.splice(pick.index, 1);
     await saveProviders(providers);
-    const removedUrl = pick.description ?? '';
-    const remaining = getModels().filter(m => m.providerUrl !== removedUrl);
+    // Remove all models belonging to this provider
+    const remaining = getModels().filter(m => m.providerId !== removedId);
     await saveModels(remaining);
     vscode.window.showInformationMessage(`Custom LLM: Provider "${pick.label}" removed.`);
 
@@ -384,6 +458,7 @@ async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
     });
     if (newName === undefined) { return; }
     providers[pick.index].name = newName;
+    // Note: slug (id) intentionally not changed — models remain linked
     await saveProviders(providers);
     vscode.window.showInformationMessage(`Custom LLM: Provider renamed to "${newName}".`);
 
@@ -397,12 +472,9 @@ async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
       ignoreFocusOut: true,
     });
     if (newUrl === undefined) { return; }
-    const oldUrl = providers[pick.index].baseUrl;
     providers[pick.index].baseUrl = newUrl;
     await saveProviders(providers);
-    // Re-tag all models that pointed to the old URL
-    const updatedModels = getModels().map(m => (m.providerUrl === oldUrl ? { ...m, providerUrl: newUrl } : m));
-    await saveModels(updatedModels);
+    // No model re-tagging needed — models link by providerId (slug), not by URL
     vscode.window.showInformationMessage(`Custom LLM: "${p.name}" endpoint updated. Refreshing models...`);
     await discoverAllModels(true);
 
@@ -485,7 +557,7 @@ async function cmdTestConnection(): Promise<void> {
 
       // Step 2 -- quick ping (tiny chat request to verify the model responds)
       let pingMs = -1;
-      const models = getModels().filter(m => m.providerUrl === selected.baseUrl);
+      const models = getModels().filter(m => m.providerId === selected.id);
       if (models.length > 0) {
         const pingModel = models[0];
         const t1 = Date.now();
@@ -532,10 +604,13 @@ export function activate(context: vscode.ExtensionContext) {
   const provider = new CustomLlmProvider(statusBar);
   const registration = vscode.lm.registerLanguageModelChatProvider('custom-llm', provider);
 
-  // Startup sequence: migrate legacy settings, discover models, clean up stale
-  // BYOK entries left by versions <= 0.4.6.
+  // Startup sequence:
+  // 1. migrate legacy single-provider settings (pre-0.5)
+  // 2. migrate providerUrl -> providerId (pre-slug versions)
+  // 3. discover models, clean up stale BYOK entries
   (async () => {
     await migrateLegacySettings();
+    await migrateToSlugIds();
     await discoverAllModels(true);
     await cleanupLegacyByokEntries();
     setTimeout(() => provider.notifyModelsChanged(), 2000);

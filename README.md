@@ -1,11 +1,11 @@
 # Custom LLM Provider
 
 Connect any **OpenAI-compatible** AI endpoint to GitHub Copilot Chat in Visual Studio Code.  
-Works out of the box with **Alibaba DashScope (Qwen)**, OpenRouter, and any other OpenAI-compatible API.
+Works out of the box with **Alibaba DashScope (Qwen)**, **MiniMax**, OpenRouter, and any other OpenAI-compatible API.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.119%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.4.8-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-brightgreen)](CHANGELOG.md)
 
 ---
 
@@ -23,8 +23,9 @@ Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder
 
 - Models appear directly in the **Copilot Chat model picker** — no extra setup
 - **`@qwen` chat participant** (opt-in) — type `@qwen` in any chat turn to route just that message through your custom model
-- **Multi-provider support** — connect Alibaba DashScope, OpenRouter, and any other provider simultaneously, each with its own URL and API key
-- **Dynamic model discovery** — models are fetched automatically from each provider's `/v1/models` endpoint on startup
+- **Multi-provider support** — connect Alibaba DashScope, MiniMax, OpenRouter, and any other provider simultaneously, each with its own URL and API key
+- **Dynamic model discovery** — models are fetched automatically from each provider's `/v1/models` (or `/model/info` for LiteLLM-compatible endpoints) on startup
+- **Stable provider IDs** — providers are identified by a human-readable slug (e.g. `alibaba-dashscope`), so renaming or changing a provider's URL never breaks the model list
 - **Image input support** — attach images directly in Copilot Chat (requires a multimodal model such as `qwen-vl-max`)
 - Full streaming support (Server-Sent Events)
 - **Tool calling support** — agent mode, `/fix`, `/edit`, `@workspace` all work
@@ -79,8 +80,9 @@ Type `@qwen` at the start of a message to route **that single turn** through you
 
 | Provider | Base URL |
 | -------- | -------- |
-| Alibaba DashScope (international) | `https://coding-intl.dashscope.aliyuncs.com/v1` |
+| Alibaba DashScope (international / Coding Plan) | `https://coding-intl.dashscope.aliyuncs.com/v1` |
 | Alibaba DashScope (standard) | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| MiniMax ✅ | `https://api.minimaxi.chat/v1` |
 | OpenRouter | `https://openrouter.ai/api/v1` |
 | Any OpenAI-compatible API | custom URL |
 
@@ -111,24 +113,35 @@ Ctrl+Shift+P → Custom LLM: Refresh model list from API
 
 ### Provider configuration
 
-Providers are stored in the `customLlm.providers` array. Each entry has three fields:
+Providers are stored in the `customLlm.providers` array. Each entry has the following fields:
 
 | Field | Description |
 | ----- | ----------- |
-| `name` | Display name shown in info messages (e.g. `"Alibaba DashScope"`) |
+| `id` | Auto-generated slug used as a stable internal identifier (e.g. `"alibaba-dashscope"`). Set automatically — you don't need to write this by hand. |
+| `name` | Display name shown in the UI and info messages (e.g. `"Alibaba DashScope"`) |
 | `baseUrl` | Base URL ending with `/v1` |
 | `apiKey` | API key (`sk-…`). Leave empty if not required. |
+
+The `id` slug is derived from the provider name when you add it via the wizard. It stays stable even if you later rename the provider or change its URL — so the model list never gets orphaned.
 
 You can also edit settings directly in **User Settings JSON** (`Ctrl+Shift+P` → `Open User Settings (JSON)`):
 
 ```json
 "customLlm.providers": [
   {
+    "id": "alibaba-dashscope",
     "name": "Alibaba DashScope",
     "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1",
     "apiKey": "sk-YOUR-KEY-HERE"
   },
   {
+    "id": "minimax",
+    "name": "MiniMax",
+    "baseUrl": "https://api.minimaxi.chat/v1",
+    "apiKey": "YOUR-MINIMAX-KEY-HERE"
+  },
+  {
+    "id": "openrouter",
     "name": "OpenRouter",
     "baseUrl": "https://openrouter.ai/api/v1",
     "apiKey": "sk-or-YOUR-KEY-HERE"
@@ -136,7 +149,7 @@ You can also edit settings directly in **User Settings JSON** (`Ctrl+Shift+P` �
 ]
 ```
 
-> **Legacy settings** (`customLlm.baseUrl` and `customLlm.apiKey`) are automatically migrated to the new `customLlm.providers` format on the first startup after updating to v0.4.0. No manual action needed.
+> **Migration:** Existing configs without an `id` field are upgraded automatically on first launch — no manual action needed. Legacy `customLlm.baseUrl` / `customLlm.apiKey` settings (pre-v0.4.0) and the old `providerUrl` field on models (pre-v0.5.0) are both migrated silently.
 
 ### Model list
 
@@ -148,15 +161,17 @@ If no providers are configured or the API is unreachable, the extension falls ba
 
 | Model ID | Display Name | Provider | Context |
 | -------- | ----------- | -------- | ------- |
-| `qwen3-coder-plus` | Qwen3 Coder Plus | Alibaba | 128K |
-| `qwen3-coder-next` | Qwen3 Coder Next | Alibaba | 128K |
-| `qwen3-max-2026-01-23` | Qwen3 Max | Alibaba | 128K |
-| `qwen3.5-plus` | Qwen3.5 Plus | Alibaba | 1M |
-| `qwen3.6-plus` | Qwen3.6 Plus | Alibaba | 1M |
+| `qwen3-coder-plus` | Qwen3 Coder Plus | Alibaba DashScope | 128K |
+| `qwen3-coder-next` | Qwen3 Coder Next | Alibaba DashScope | 128K |
+| `qwen3-max-2026-01-23` | Qwen3 Max | Alibaba DashScope | 128K |
+| `qwen3.5-plus` | Qwen3.5 Plus | Alibaba DashScope | 1M |
+| `qwen3.6-plus` | Qwen3.6 Plus | Alibaba DashScope | 1M |
 | `glm-5` | GLM-5 | Zhipu | 200K |
 | `glm-4.7` | GLM-4.7 | Zhipu | 128K |
 | `kimi-k2.5` | Kimi K2.5 | Moonshot | 256K |
-| `MiniMax-M2.5` | MiniMax M2.5 | MiniMax | 256K |
+| `MiniMax-M2.5` | MiniMax M2.5 | MiniMax ✅ | 256K |
+
+> **MiniMax** models (`MiniMax-M2.5` and others) are fully supported — connect via `https://api.minimaxi.chat/v1` with your MiniMax API key.
 
 ---
 
@@ -202,6 +217,10 @@ Maximum delay capped at 10 seconds. Request cancellation is never retried.
 ---
 
 ## 🛠️ Troubleshooting
+
+### Models lose their provider after changing a provider's URL (pre-v0.5.0)
+
+Fixed in **v0.5.0**. Providers now have a stable slug `id` (e.g. `"alibaba-dashscope"`) that models reference instead of the raw endpoint URL. Changing a provider's URL no longer orphans its models. Existing configs are migrated automatically on first launch.
 
 ### "Add Models" → "Custom LLM" shows no input dialogs (v0.4.8)
 

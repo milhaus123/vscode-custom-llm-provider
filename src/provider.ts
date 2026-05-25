@@ -61,7 +61,8 @@ interface OpenAIStreamChunk {
 interface ModelConfig {
   id: string;
   name: string;
-  providerUrl?: string;
+  providerId?: string;   // slug reference to ProviderConfig.id
+  providerUrl?: string;  // @deprecated – fallback for pre-migration configs
   maxInputTokens: number;
   maxOutputTokens: number;
 }
@@ -371,7 +372,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
   ): vscode.ProviderResult<vscode.LanguageModelChatInformation[]> {
     const cfg = vscode.workspace.getConfiguration('customLlm');
     const modelConfigs: ModelConfig[] = cfg.get('models') ?? [];
-    const providers: Array<{ name: string; baseUrl: string; apiKey?: string }> = cfg.get('providers') ?? [];
+    const providers: Array<{ id?: string; name: string; baseUrl: string; apiKey?: string }> = cfg.get('providers') ?? [];
 
     if (options.silent) {
       const hasUsableProvider = providers.some(p => !!p.baseUrl);
@@ -381,11 +382,16 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
       }
     }
 
-    const nameMap = new Map(providers.map(p => [p.baseUrl, p.name]));
+    // Build lookup by both id (new) and baseUrl (fallback for pre-migration models)
+    const nameMap = new Map<string, string>([
+      ...providers.filter(p => p.id).map(p => [p.id, p.name] as [string, string]),
+      ...providers.map(p => [p.baseUrl, p.name] as [string, string]),
+    ]);
 
     const result = modelConfigs.map((m) => {
-      const providerLabel = nameMap.get(m.providerUrl ?? '')
-        ?? (m.providerUrl?.includes('dashscope') ? 'Alibaba DashScope' : 'Custom LLM');
+      const providerLabel = nameMap.get(m.providerId ?? '')
+        ?? nameMap.get(m.providerUrl ?? '')
+        ?? 'Custom LLM';
       return {
         id: m.id,
         name: m.name,
@@ -413,19 +419,20 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     const cfg = vscode.workspace.getConfiguration('customLlm');
 
     const models: ModelConfig[] = cfg.get('models') ?? [];
-    const providers: Array<{ name: string; baseUrl: string; apiKey: string }> = cfg.get('providers') ?? [];
+    const providers: Array<{ id?: string; name: string; baseUrl: string; apiKey: string }> = cfg.get('providers') ?? [];
     const modelCfg = models.find(m => m.id === model.id);
     if (!modelCfg) {
       logLine(`WARN: no ModelConfig found for model.id='${model.id}'. Configured model ids: [${models.map(m => m.id).join(', ')}]`);
     }
 
     let provider = modelCfg
-      ? providers.find(p => p.baseUrl === modelCfg.providerUrl)
+      ? (providers.find(p => p.id && p.id === modelCfg.providerId)        // primary: slug match
+        ?? providers.find(p => p.baseUrl === modelCfg.providerUrl))        // fallback: URL match (pre-migration)
       : undefined;
     if (!provider && providers.length === 1) {
       provider = providers[0];
       if (modelCfg) {
-        logLine(`[${model.id}] providerUrl mismatch but only 1 provider configured — using it`);
+        logLine(`[${model.id}] providerId mismatch but only 1 provider configured — using it`);
       }
     }
     if (!provider) {

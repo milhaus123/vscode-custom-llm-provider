@@ -2,7 +2,7 @@
   "name": "vscode-custom-llm-provider",
   "displayName": "Custom LLM Provider",
   "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, ...) to GitHub Copilot Chat in VS Code.",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "publisher": "MartinRiha",
   "author": {
     "name": "Martin Riha",
