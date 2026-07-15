@@ -84,6 +84,7 @@ Type `@qwen` at the start of a message to route **that single turn** through you
 | -------- | -------- |
 | Alibaba DashScope (international / Coding Plan) | `https://coding-intl.dashscope.aliyuncs.com/v1` |
 | Alibaba DashScope (standard) | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| Atlas Cloud | `https://api.atlascloud.ai/v1` |
 | MiniMax âœ… | `https://api.minimaxi.chat/v1` |
 | OpenRouter | `https://openrouter.ai/api/v1` |
 | Ollama (local) | `http://localhost:11434/v1` |
@@ -138,6 +139,12 @@ You can also edit settings directly in **User Settings JSON** (`Ctrl+Shift+P` â†
     "name": "Alibaba DashScope",
     "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1",
     "apiKey": "sk-YOUR-KEY-HERE"
+  },
+  {
+    "id": "atlas-cloud",
+    "name": "Atlas Cloud",
+    "baseUrl": "https://api.atlascloud.ai/v1",
+    "apiKey": "YOUR-ATLASCLOUD-API-KEY-HERE"
   },
   {
     "id": "minimax",
