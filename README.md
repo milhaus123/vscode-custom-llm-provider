@@ -5,7 +5,7 @@ Works out of the box with **Alibaba DashScope (Qwen)**, **MiniMax**, **OpenRoute
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.119%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.4.9-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-brightgreen)](CHANGELOG.md)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=github-sponsors)](https://github.com/sponsors/milhaus123)
 
@@ -17,7 +17,7 @@ This extension was developed primarily to bring **[Alibaba Cloud Coding Plan](ht
 
 Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder** models in full agent mode — editing files, running tests, searching your codebase — all from within GitHub Copilot Chat. This extension bridges the gap by exposing those models directly in the VS Code model picker.
 
-![Alibaba Cloud Coding Plan](images/alibaba-coding-plan.png)
+![Alibaba Coding Plan connected to VS Code through Custom LLM Provider](images/alibaba-coding-plan.png)
 
 ---
 
@@ -26,6 +26,7 @@ Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder
 - Models appear directly in the **Copilot Chat model picker** — no extra setup
 - **`@qwen` chat participant** (opt-in) — type `@qwen` in any chat turn to route just that message through your custom model
 - **Multi-provider support** — connect Alibaba DashScope, MiniMax, OpenRouter, and any other provider simultaneously, each with its own URL and API key
+- **Secure API key storage** — keys are kept in VS Code's encrypted `SecretStorage` instead of provider settings
 - **Dynamic model discovery** — models are fetched automatically from each provider's `/v1/models` (or `/model/info` for LiteLLM-compatible endpoints) on startup
 - **Stable provider IDs** — providers are identified by a human-readable slug (e.g. `alibaba-dashscope`), so renaming or changing a provider's URL never breaks the model list
 - **Image input support** — attach images directly in Copilot Chat (requires a multimodal model such as `qwen-vl-max`)
@@ -50,7 +51,9 @@ The wizard will ask for:
 
 After saving, the extension automatically fetches available models from the provider.
 
-![Settings configuration](images/settings.png)
+The API key is stored in VS Code's encrypted secret storage, not in your user or workspace `settings.json`.
+
+![Secure provider and API key management](images/settings.png)
 
 > **Get your API key** from [Alibaba Cloud Model Studio](https://modelstudio.console.alibabacloud.com) → API Keys section.  
 > Note that Coding Plan API keys are separate from regular DashScope keys.
@@ -61,7 +64,7 @@ Open Copilot Chat (`Ctrl+Alt+I`) → click the model name → your models appear
 
 > **First time only:** Open `Ctrl+Shift+P` → **Chat: Manage Language Models** → hover over each model → click the **eye icon 👁** to enable it in the picker.
 
-![Model picker with Custom LLM models](images/model-picker.png)
+![Current VS Code Chat model picker with Custom LLM models](images/model-picker.png)
 
 ### 3. Use the `@qwen` participant (optional)
 
@@ -74,7 +77,7 @@ Type `@qwen` at the start of a message to route **that single turn** through you
 
 > **Per-turn, not sticky:** since v0.4.5 the participant is **not sticky** — you have to type `@qwen` every time you want it. Without `@qwen`, the message goes to whatever model you picked in the model picker (including original GitHub Copilot models like GPT-4 or Claude). This prevents the participant from accidentally hijacking native Copilot turns. If you want to always use your custom model, select it in the picker instead.
 
-![Using the @qwen chat participant](images/qwen-participant.png)
+![Using the non-sticky @qwen chat participant in VS Code Chat](images/qwen-participant.png)
 
 ---
 
@@ -125,9 +128,8 @@ Providers are stored in the `customLlm.providers` array. Each entry has the foll
 | `id` | Auto-generated slug used as a stable internal identifier (e.g. `"alibaba-dashscope"`). Set automatically — you don't need to write this by hand. |
 | `name` | Display name shown in the UI and info messages (e.g. `"Alibaba DashScope"`) |
 | `baseUrl` | Base URL ending with `/v1` |
-| `apiKey` | API key (`sk-…`). Leave empty if not required. |
 
-The `id` slug is derived from the provider name when you add it via the wizard. It stays stable even if you later rename the provider or change its URL — so the model list never gets orphaned.
+The `id` slug is derived from the provider name when you add it via the wizard. It stays stable even if you later rename the provider or change its URL — so the model list never gets orphaned, and the API key stays attached to the right provider.
 
 You can also edit settings directly in **User Settings JSON** (`Ctrl+Shift+P` → `Open User Settings (JSON)`):
 
@@ -136,25 +138,46 @@ You can also edit settings directly in **User Settings JSON** (`Ctrl+Shift+P` �
   {
     "id": "alibaba-dashscope",
     "name": "Alibaba DashScope",
-    "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1",
-    "apiKey": "sk-YOUR-KEY-HERE"
+    "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1"
   },
   {
     "id": "minimax",
     "name": "MiniMax",
-    "baseUrl": "https://api.minimaxi.chat/v1",
-    "apiKey": "YOUR-MINIMAX-KEY-HERE"
+    "baseUrl": "https://api.minimaxi.chat/v1"
   },
   {
     "id": "openrouter",
     "name": "OpenRouter",
-    "baseUrl": "https://openrouter.ai/api/v1",
-    "apiKey": "sk-or-YOUR-KEY-HERE"
+    "baseUrl": "https://openrouter.ai/api/v1"
   }
 ]
 ```
 
-> **Migration:** Existing configs without an `id` field are upgraded automatically on first launch — no manual action needed. Legacy `customLlm.baseUrl` / `customLlm.apiKey` settings (pre-v0.4.0) and the old `providerUrl` field on models (pre-v0.5.0) are both migrated silently.
+### 🔐 API keys (v0.5.0+)
+
+Starting with v0.5.0, API keys are kept out of `settings.json` during normal operation. Keys are stored through VS Code's [`SecretStorage`](https://code.visualstudio.com/api/references/vscode-api#SecretStorage) API, which VS Code documents as encrypted. On desktop, VS Code uses Electron's `safeStorage`; the underlying implementation varies by platform.
+
+Each key is stored under the provider's stable `id`, so renaming a provider or changing its endpoint keeps the key attached to the correct provider.
+
+> `SecretStorage` is global to this extension on the current machine, not scoped to a workspace. Provider configurations that use the same `id` therefore share the same stored key.
+
+Set or change a key through the UI:
+
+```
+Ctrl+Shift+P → Custom LLM: Manage providers → <provider> → Edit API key
+```
+
+Leaving the input empty removes the stored key. Removing a provider deletes its key too.
+
+Do not add an `apiKey` property to `customLlm.providers` manually. Because keys live outside settings, they are not exposed through user or workspace `settings.json`. VS Code does **not** sync `SecretStorage` across machines, so enter each key once per machine.
+
+#### Upgrading to v0.5.0
+
+On startup, the extension scans user, workspace, and workspace-folder configurations. Any non-empty `apiKey` found in `customLlm.providers` is stored in `SecretStorage`, then the `apiKey` property is removed from that settings scope. The same cleanup runs again if `customLlm.providers` is edited later. A notification reports how many keys were moved.
+
+Existing provider entries without an `id` are upgraded automatically. Legacy `customLlm.baseUrl` / `customLlm.apiKey` settings (pre-v0.4.0) and the old `providerUrl` model field are migrated as well.
+
+> A key that has already leaked into a committed `settings.json` should be rotated at the provider — migration removes the value locally, but cannot un-publish it.
 
 ### Model list
 
@@ -195,7 +218,7 @@ If no providers are configured or the API is unreachable, the extension falls ba
 
 - Visual Studio Code `1.119.0` or later
 - GitHub Copilot extension installed and signed in (individual plan)
-- An API key for your chosen provider
+- An API key if your chosen provider requires authentication
 
 ---
 
@@ -260,7 +283,7 @@ To force a model refresh: `Ctrl+Shift+P` → **Custom LLM: Refresh model list fr
 Your API key is missing or incorrect. Fix:
 
 1. Open `Ctrl+Shift+P` → **Custom LLM: Manage providers**
-2. Select your provider → **Edit**
+2. Select your provider → **Edit API key**
 3. Paste your API key (starts with `sk-`)
 4. Make sure there are no extra spaces around the key
 
@@ -278,9 +301,11 @@ The extension hot-reloads on settings change, but it may take a few seconds. If 
 
 Not all models support image input. If you see `"This model does not support image input"`, switch to a multimodal model. For Alibaba DashScope, `qwen-vl-max` supports vision. Coding-focused models (`qwen3-coder-*`, `qwen3.6-plus`, etc.) are text-only.
 
-### Migrating from v0.3.x or earlier
+### Migrating from v0.4.x or earlier
 
-The old `customLlm.baseUrl` and `customLlm.apiKey` settings are automatically migrated to the new `customLlm.providers` array on the first launch. If you need to re-run migration manually, remove the `customLlm.providers` entry from your settings and reload VS Code.
+Update to v0.5.0 and reload VS Code. Keys in v0.4.x `customLlm.providers` entries are moved to secret storage automatically. The older single-provider `customLlm.baseUrl` and `customLlm.apiKey` settings are also migrated, with the key stored securely.
+
+If a migrated key is missing, do not put it back into `settings.json`. Run **Custom LLM: Manage providers**, select the provider, and choose **Edit API key**. You must also repeat this on each additional machine because VS Code does not sync secret storage.
 
 ---
 

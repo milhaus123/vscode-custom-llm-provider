@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.5.0 — July 2026
+
+### Security
+
+- **API keys are no longer stored in `settings.json`.** They now live in VS Code's encrypted `SecretStorage` (`ExtensionContext.secrets`), backed by the OS credential store. Fixes [#4](https://github.com/milhaus123/vscode-custom-llm-provider/issues/4).
+  - Keys are filed under the provider's stable `id` slug, so renaming a provider or changing its endpoint keeps the key attached.
+  - On startup, any `apiKey` still present in `customLlm.providers` is moved into secret storage and stripped from the setting — across user, workspace **and** folder settings, so a key in a committed `.vscode/settings.json` is cleaned up too. A one-time notification reports how many keys were moved.
+  - The same sweep runs whenever `customLlm.providers` changes, so a hand-edited key does not linger in the file.
+  - Writes to `customLlm.providers` now strip `apiKey` unconditionally — the extension can no longer put a key back into settings.
+  - The legacy `customLlm.apiKey` / `customLlm.baseUrl` settings are cleared from every scope that defines them, not just user settings.
+  - `apiKey` is marked deprecated in the settings schema and removed from the required-fields list.
+
+> **Note:** a key that was previously committed to a repository should be rotated at the provider. Migration removes it locally but cannot un-publish it.
+
+### Changes
+
+- **Custom LLM: Manage providers** and **Test connection** now show `API key set (secure storage)`; clearing the input in *Edit API key* deletes the stored key, and removing a provider deletes its key as well.
+- Keys are not carried by Settings Sync any more (secret storage is per-machine) — set them once per machine.
+
+---
+
 ## v0.4.8 — May 2026
 
 ### Bug fixes

@@ -1,79 +1,92 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 360" width="680" height="360" font-family="'Consolas', 'Courier New', monospace">
-  <!-- VS Code editor background -->
-  <rect width="680" height="360" fill="#1e1e1e" rx="8"/>
-  <!-- Title bar -->
-  <rect width="680" height="28" fill="#3c3c3c" rx="8"/>
-  <rect y="20" width="680" height="8" fill="#3c3c3c"/>
-  <circle cx="14" cy="14" r="5" fill="#ff5f57"/>
-  <circle cx="30" cy="14" r="5" fill="#febc2e"/>
-  <circle cx="46" cy="14" r="5" fill="#28c840"/>
-  <text x="340" y="18" text-anchor="middle" fill="#cccccc" font-size="12" font-family="'Segoe UI', system-ui, sans-serif">settings.json — User Settings</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" font-family="'Segoe UI', Inter, system-ui, sans-serif">
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1d1f24"/>
+      <stop offset="1" stop-color="#15171b"/>
+    </linearGradient>
+    <linearGradient id="secure" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a4b42"/>
+      <stop offset="1" stop-color="#12352f"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
 
-  <!-- Tab bar -->
-  <rect x="0" y="28" width="680" height="30" fill="#2d2d2d"/>
-  <rect x="0" y="28" width="140" height="30" fill="#1e1e1e"/>
-  <text x="12" y="47" fill="#cccccc" font-size="12" font-family="'Segoe UI', system-ui, sans-serif">settings.json</text>
-  <circle cx="130" cy="43" r="4" fill="#e8a838"/>
+  <rect width="1200" height="675" rx="22" fill="url(#frame)"/>
+  <rect width="1200" height="44" rx="22" fill="#2b2d31"/>
+  <rect y="32" width="1200" height="12" fill="#2b2d31"/>
+  <circle cx="22" cy="22" r="7" fill="#ff5f57"/>
+  <circle cx="46" cy="22" r="7" fill="#febc2e"/>
+  <circle cx="70" cy="22" r="7" fill="#28c840"/>
+  <text x="600" y="28" text-anchor="middle" fill="#c8c8c8" font-size="14">Visual Studio Code — Custom LLM Provider</text>
 
-  <!-- Line numbers background -->
-  <rect x="0" y="58" width="38" height="302" fill="#1e1e1e"/>
+  <!-- Background app chrome -->
+  <rect x="0" y="44" width="52" height="593" fill="#18191c"/>
+  <rect x="52" y="44" width="238" height="593" fill="#202226"/>
+  <rect x="290" y="44" width="910" height="593" fill="#191b1f"/>
+  <g fill="none" stroke="#8b8e96" stroke-width="2">
+    <rect x="17" y="70" width="18" height="21" rx="2"/>
+    <path d="M18 115h16M18 121h16M18 127h11"/>
+    <circle cx="26" cy="160" r="10"/>
+    <path d="M19 185h14l-7 12z"/>
+  </g>
+  <text x="72" y="78" fill="#c9cbd1" font-size="12" font-weight="700" letter-spacing="0.8">CUSTOM LLM</text>
+  <text x="72" y="114" fill="#9da1aa" font-size="14">Providers</text>
+  <rect x="62" y="128" width="218" height="38" rx="7" fill="#2b3038"/>
+  <circle cx="82" cy="147" r="6" fill="#4e9cff"/>
+  <text x="98" y="152" fill="#f0f2f7" font-size="14">Alibaba DashScope</text>
+  <text x="72" y="190" fill="#9da1aa" font-size="14">OpenRouter</text>
+  <text x="72" y="222" fill="#9da1aa" font-size="14">MiniMax</text>
+  <rect x="71" y="255" width="146" height="32" rx="6" fill="#153e64" stroke="#2775ac"/>
+  <text x="91" y="276" fill="#bfe2ff" font-size="13">+ Add provider</text>
 
-  <!-- Editor content -->
-  <rect x="38" y="58" width="642" height="302" fill="#1e1e1e"/>
+  <!-- Main dialog -->
+  <g filter="url(#shadow)">
+    <rect x="328" y="76" width="818" height="526" rx="18" fill="#24262b" stroke="#454952"/>
+  </g>
+  <text x="366" y="119" fill="#ffffff" font-size="22" font-weight="650">Manage providers</text>
+  <text x="366" y="147" fill="#a5a9b2" font-size="14">Select a provider, then update its name, endpoint, or API key.</text>
 
-  <!-- Line numbers -->
-  <text x="28" y="82" text-anchor="end" fill="#555555" font-size="13">1</text>
-  <text x="28" y="102" text-anchor="end" fill="#555555" font-size="13">2</text>
-  <text x="28" y="122" text-anchor="end" fill="#555555" font-size="13">3</text>
-  <text x="28" y="142" text-anchor="end" fill="#555555" font-size="13">4</text>
-  <text x="28" y="162" text-anchor="end" fill="#555555" font-size="13">5</text>
-  <text x="28" y="182" text-anchor="end" fill="#555555" font-size="13">6</text>
-  <text x="28" y="202" text-anchor="end" fill="#555555" font-size="13">7</text>
-  <text x="28" y="222" text-anchor="end" fill="#555555" font-size="13">8</text>
-  <text x="28" y="242" text-anchor="end" fill="#555555" font-size="13">9</text>
-  <text x="28" y="262" text-anchor="end" fill="#555555" font-size="13">10</text>
-  <text x="28" y="282" text-anchor="end" fill="#555555" font-size="13">11</text>
-  <text x="28" y="302" text-anchor="end" fill="#555555" font-size="13">12</text>
-  <text x="28" y="322" text-anchor="end" fill="#555555" font-size="13">13</text>
+  <!-- Provider summary -->
+  <rect x="366" y="174" width="742" height="88" rx="12" fill="#1c1e23" stroke="#3d424c"/>
+  <rect x="386" y="194" width="48" height="48" rx="12" fill="#2b5f9d"/>
+  <path d="M398 218h24M410 206v24" stroke="#c9e3ff" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="454" y="211" fill="#f4f6fa" font-size="16" font-weight="650">Alibaba DashScope</text>
+  <text x="454" y="235" fill="#9097a6" font-size="13" font-family="'Cascadia Code', Consolas, monospace">https://coding-intl.dashscope.aliyuncs.com/v1</text>
+  <rect x="870" y="197" width="212" height="42" rx="10" fill="url(#secure)" stroke="#347565"/>
+  <path d="M890 208 899 204l9 4v7c0 7-4 12-9 15-5-3-9-8-9-15z" fill="#4de0b5"/>
+  <path d="m895 216 3 3 6-7" fill="none" stroke="#11382f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="918" y="214" fill="#caffef" font-size="12" font-weight="650">API key set</text>
+  <text x="918" y="230" fill="#79c6b1" font-size="11">secure storage</text>
 
-  <!-- Code content -->
-  <text x="52" y="82" fill="#d4d4d4" font-size="13">{</text>
+  <!-- Actions -->
+  <text x="366" y="296" fill="#9097a6" font-size="12" font-weight="700" letter-spacing="0.8">PROVIDER ACTIONS</text>
+  <rect x="366" y="310" width="150" height="42" rx="8" fill="#30333a" stroke="#4a4e57"/>
+  <text x="407" y="336" fill="#d8dae0" font-size="13">Edit name</text>
+  <rect x="528" y="310" width="186" height="42" rx="8" fill="#30333a" stroke="#4a4e57"/>
+  <text x="562" y="336" fill="#d8dae0" font-size="13">Edit endpoint URL</text>
+  <rect x="726" y="310" width="170" height="42" rx="8" fill="#0b5a91" stroke="#2995d6" stroke-width="1.5"/>
+  <path d="M749 321 758 317l9 4v7c0 7-4 12-9 15-5-3-9-8-9-15z" fill="#8bd1ff"/>
+  <text x="779" y="336" fill="#ffffff" font-size="13" font-weight="650">Edit API key</text>
+  <rect x="908" y="310" width="116" height="42" rx="8" fill="#30333a" stroke="#4a4e57"/>
+  <text x="947" y="336" fill="#e1b4b4" font-size="13">Remove</text>
 
-  <!-- Line 2: comment -->
-  <text x="52" y="102" fill="#6a9955" font-size="13">  // Custom LLM Provider — Alibaba DashScope (Qwen)</text>
+  <!-- API key editor -->
+  <rect x="366" y="382" width="742" height="162" rx="12" fill="#1c1e23" stroke="#3d424c"/>
+  <text x="390" y="415" fill="#f0f2f7" font-size="15" font-weight="650">API Key for “Alibaba DashScope”</text>
+  <text x="390" y="439" fill="#949aa7" font-size="12">Paste a new key, or clear the field to remove the stored key.</text>
+  <rect x="390" y="456" width="506" height="46" rx="8" fill="#131519" stroke="#4c9bd3" stroke-width="1.5"/>
+  <text x="408" y="485" fill="#d4d7de" font-size="17" letter-spacing="3">••••••••••••••••••••••••</text>
+  <path d="M862 472c-10-9-25-9-35 0 10 9 25 9 35 0z" fill="none" stroke="#9299a8" stroke-width="1.7"/>
+  <circle cx="844.5" cy="472" r="4" fill="#9299a8"/>
+  <rect x="912" y="456" width="172" height="46" rx="8" fill="#0e639c"/>
+  <text x="947" y="484" fill="#ffffff" font-size="13" font-weight="650">Save securely</text>
 
-  <!-- Line 3: baseUrl -->
-  <text x="52" y="122" fill="#d4d4d4" font-size="13">  "</text><text x="73" y="122" fill="#9cdcfe" font-size="13">customLlm.baseUrl</text><text x="200" y="122" fill="#d4d4d4" font-size="13">": "</text><text x="223" y="122" fill="#ce9178" font-size="13">https://coding-intl.dashscope.aliyuncs.com/v1</text><text x="534" y="122" fill="#d4d4d4" font-size="13">",</text>
+  <path d="M393 519 402 515l9 4v7c0 7-4 12-9 15-5-3-9-8-9-15z" fill="#45d5aa"/>
+  <text x="423" y="529" fill="#bff7e6" font-size="12" font-weight="600">Stored in VS Code SecretStorage</text>
+  <text x="623" y="529" fill="#7e8799" font-size="12">• never shown in settings.json • not synced between machines</text>
 
-  <!-- Line 4: apiKey -->
-  <text x="52" y="142" fill="#d4d4d4" font-size="13">  "</text><text x="73" y="142" fill="#9cdcfe" font-size="13">customLlm.apiKey</text><text x="192" y="142" fill="#d4d4d4" font-size="13">": "</text><text x="215" y="142" fill="#ce9178" font-size="13">sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</text><text x="490" y="142" fill="#d4d4d4" font-size="13">",</text>
-
-  <!-- Line 5: empty -->
-
-  <!-- Line 6: comment -->
-  <text x="52" y="182" fill="#6a9955" font-size="13">  // Optional: customize models list</text>
-
-  <!-- Line 7: models -->
-  <text x="52" y="202" fill="#d4d4d4" font-size="13">  "</text><text x="73" y="202" fill="#9cdcfe" font-size="13">customLlm.models</text><text x="192" y="202" fill="#d4d4d4" font-size="13">": [</text>
-
-  <!-- Line 8 -->
-  <text x="52" y="222" fill="#d4d4d4" font-size="13">    { "</text><text x="91" y="222" fill="#9cdcfe" font-size="13">id</text><text x="105" y="222" fill="#d4d4d4" font-size="13">": "</text><text x="126" y="222" fill="#ce9178" font-size="13">qwen3-coder-plus</text><text x="241" y="222" fill="#d4d4d4" font-size="13">", "</text><text x="265" y="222" fill="#9cdcfe" font-size="13">name</text><text x="296" y="222" fill="#d4d4d4" font-size="13">": "</text><text x="317" y="222" fill="#ce9178" font-size="13">Qwen3 Coder Plus</text><text x="430" y="222" fill="#d4d4d4" font-size="13">" },</text>
-
-  <!-- Line 9 -->
-  <text x="52" y="242" fill="#d4d4d4" font-size="13">    { "</text><text x="91" y="242" fill="#9cdcfe" font-size="13">id</text><text x="105" y="242" fill="#d4d4d4" font-size="13">": "</text><text x="126" y="242" fill="#ce9178" font-size="13">qwen3-coder-next</text><text x="241" y="242" fill="#d4d4d4" font-size="13">", "</text><text x="265" y="242" fill="#9cdcfe" font-size="13">name</text><text x="296" y="242" fill="#d4d4d4" font-size="13">": "</text><text x="317" y="242" fill="#ce9178" font-size="13">Qwen3 Coder Next</text><text x="430" y="242" fill="#d4d4d4" font-size="13">" },</text>
-
-  <!-- Line 10 -->
-  <text x="52" y="262" fill="#d4d4d4" font-size="13">    { "</text><text x="91" y="262" fill="#9cdcfe" font-size="13">id</text><text x="105" y="262" fill="#d4d4d4" font-size="13">": "</text><text x="126" y="262" fill="#ce9178" font-size="13">qwen3-max-2026-01-23</text><text x="264" y="262" fill="#d4d4d4" font-size="13">", "</text><text x="288" y="262" fill="#9cdcfe" font-size="13">name</text><text x="319" y="262" fill="#d4d4d4" font-size="13">": "</text><text x="340" y="262" fill="#ce9178" font-size="13">Qwen3 Max</text><text x="410" y="262" fill="#d4d4d4" font-size="13">" }</text>
-
-  <!-- Line 11 -->
-  <text x="52" y="282" fill="#d4d4d4" font-size="13">  ],</text>
-
-  <!-- Line 12: empty -->
-
-  <!-- Line 13: close -->
-  <text x="52" y="322" fill="#d4d4d4" font-size="13">}</text>
-
-  <!-- Caption -->
-  <rect x="0" y="334" width="680" height="26" fill="#007acc"/>
-  <text x="340" y="351" text-anchor="middle" fill="#ffffff" font-size="11" font-family="'Segoe UI', system-ui, sans-serif">Add to User Settings JSON (Ctrl+Shift+P → Open User Settings JSON)</text>
+  <rect x="0" y="637" width="1200" height="38" fill="#0078d4"/>
+  <text x="600" y="662" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="600">Provider URLs stay in settings; API keys stay in encrypted SecretStorage.</text>
 </svg>
