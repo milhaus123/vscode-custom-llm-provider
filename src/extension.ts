@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import { CustomLlmProvider } from './provider';
 import { registerChatParticipant } from './participant';
+import { ApiKeyStore } from './secrets';
 
 export interface ProviderConfig {
   id: string;           // slug, e.g. "alibaba-dashscope" — stable identity, independent of name/URL
   name: string;
   baseUrl: string;
-  apiKey: string;
+  apiKey?: string;      // @deprecated – never written any more; read once, then moved to SecretStorage
 }
 
 export interface ModelConfig {
@@ -20,10 +21,9 @@ export interface ModelConfig {
 
 // ── Fallback defaults ──────────────────────────────────────────────────────────
 
-const DEFAULT_PROVIDER: Omit<ProviderConfig, 'id'> = {
+const DEFAULT_PROVIDER: Omit<ProviderConfig, 'id' | 'apiKey'> = {
   name: 'Alibaba DashScope',
   baseUrl: 'https://coding-intl.dashscope.aliyuncs.com/v1',
-  apiKey: '',
 };
 
 const DEFAULT_MODELS: Omit<ModelConfig, 'providerId'>[] = [
@@ -98,7 +98,9 @@ function getProviders(): ProviderConfig[] {
 }
 
 async function saveProviders(providers: ProviderConfig[]): Promise<void> {
-  await vscode.workspace.getConfiguration('customLlm').update('providers', providers, vscode.ConfigurationTarget.Global);
+  // Strip apiKey unconditionally — keys belong in SecretStorage, never in settings.json.
+  const sanitized = providers.map(({ apiKey, ...rest }) => rest);
+  await vscode.workspace.getConfiguration('customLlm').update('providers', sanitized, vscode.ConfigurationTarget.Global);
 }
 
 function getModels(): ModelConfig[] {
@@ -109,9 +111,30 @@ async function saveModels(models: ModelConfig[]): Promise<void> {
   await vscode.workspace.getConfiguration('customLlm').update('models', models, vscode.ConfigurationTarget.Global);
 }
 
+/**
+ * Removes a setting from every scope that defines it — not just Global.
+ * Needed for secrets cleanup: a plaintext key left behind in a workspace's
+ * .vscode/settings.json is exactly what this feature exists to prevent.
+ */
+async function clearSettingEverywhere(key: string): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration('customLlm');
+  const info = cfg.inspect(key);
+  const scopes: Array<[unknown, vscode.ConfigurationTarget]> = [
+    [info?.globalValue,          vscode.ConfigurationTarget.Global],
+    [info?.workspaceValue,       vscode.ConfigurationTarget.Workspace],
+    [info?.workspaceFolderValue, vscode.ConfigurationTarget.WorkspaceFolder],
+  ];
+  for (const [value, target] of scopes) {
+    if (value === undefined) { continue; }
+    try {
+      await cfg.update(key, undefined, target);
+    } catch { /* scope not writable (e.g. no folder open) */ }
+  }
+}
+
 // ── Migration from legacy single-provider settings ─────────────────────────────
 
-async function migrateLegacySettings(): Promise<boolean> {
+async function migrateLegacySettings(store: ApiKeyStore): Promise<boolean> {
   const cfg = vscode.workspace.getConfiguration('customLlm');
   const legacyUrl: string = cfg.get('baseUrl') ?? '';
   const legacyKey: string = cfg.get('apiKey') ?? '';
@@ -121,8 +144,8 @@ async function migrateLegacySettings(): Promise<boolean> {
   const providers = getProviders();
   if (providers.length > 0) {
     // Already have providers -- just clear old keys
-    await cfg.update('baseUrl', undefined, vscode.ConfigurationTarget.Global);
-    await cfg.update('apiKey',  undefined, vscode.ConfigurationTarget.Global);
+    await clearSettingEverywhere('baseUrl');
+    await clearSettingEverywhere('apiKey');
     return false;
   }
 
@@ -132,12 +155,78 @@ async function migrateLegacySettings(): Promise<boolean> {
     id: toSlug(name),
     name,
     baseUrl: legacyUrl || DEFAULT_PROVIDER.baseUrl,
-    apiKey: legacyKey,
   };
   await saveProviders([provider]);
-  await cfg.update('baseUrl', undefined, vscode.ConfigurationTarget.Global);
-  await cfg.update('apiKey',  undefined, vscode.ConfigurationTarget.Global);
+  if (legacyKey) { await store.set(provider.id, legacyKey); }
+  await clearSettingEverywhere('baseUrl');
+  await clearSettingEverywhere('apiKey');
   return true;
+}
+
+// ── Migration of plaintext API keys into SecretStorage ─────────────────────────
+
+/**
+ * Moves any `apiKey` still sitting in `customLlm.providers` into SecretStorage
+ * and rewrites the setting without it. Runs per configuration scope, so keys in
+ * workspace / folder settings are cleaned up too — and in that order, so the
+ * scope that wins at read time also wins in SecretStorage.
+ */
+async function migrateApiKeysToSecretStorage(store: ApiKeyStore): Promise<number> {
+  const cfg = vscode.workspace.getConfiguration('customLlm');
+  const info = cfg.inspect<any[]>('providers');
+  const scopes: Array<[any[] | undefined, vscode.ConfigurationTarget]> = [
+    [info?.globalValue,          vscode.ConfigurationTarget.Global],
+    [info?.workspaceValue,       vscode.ConfigurationTarget.Workspace],
+    [info?.workspaceFolderValue, vscode.ConfigurationTarget.WorkspaceFolder],
+  ];
+
+  let migrated = 0;
+
+  for (const [raw, target] of scopes) {
+    if (!Array.isArray(raw) || raw.length === 0) { continue; }
+
+    const existingIds: string[] = raw.filter(p => p?.id).map(p => p.id);
+    const pendingKeys: Array<[string, string]> = [];
+    let changed = false;
+
+    const cleaned = raw.map(p => {
+      if (!p || typeof p !== 'object') { return p; }
+      const hasKeyField = Object.prototype.hasOwnProperty.call(p, 'apiKey');
+      if (!hasKeyField && p.id) { return p; }
+
+      // A provider carrying a key must have a stable id to file it under
+      let id: string = p.id;
+      if (!id) {
+        id = uniqueSlug(p.name ?? 'provider', existingIds);
+        existingIds.push(id);
+        changed = true;
+      }
+
+      if (!hasKeyField) { return { ...p, id }; }
+
+      changed = true;
+      const { apiKey, ...rest } = p;
+      if (typeof apiKey === 'string' && apiKey) {
+        pendingKeys.push([id, apiKey]);
+        migrated++;
+      }
+      return { ...rest, id };
+    });
+
+    if (!changed) { continue; }
+
+    // Store first, strip second — a failed settings write must not lose the key.
+    for (const [id, key] of pendingKeys.splice(0)) {
+      await store.set(id, key);
+    }
+    try {
+      await cfg.update('providers', cleaned, target);
+    } catch (e) {
+      console.error('Custom LLM: could not rewrite providers without API keys:', e);
+    }
+  }
+
+  return migrated;
 }
 
 // ── Migration from providerUrl to providerId ───────────────────────────────────
@@ -179,12 +268,12 @@ async function migrateToSlugIds(): Promise<void> {
 
 // ── Model discovery ────────────────────────────────────────────────────────────
 
-async function fetchModelsForProvider(provider: ProviderConfig): Promise<ModelConfig[] | null> {
-  if (!provider.apiKey) { return null; }
+async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string): Promise<ModelConfig[] | null> {
+  if (!apiKey) { return null; }
 
   const baseUrl = provider.baseUrl.replace(/\/$/, '');
   const headers: Record<string, string> = {
-    'Authorization': `Bearer ${provider.apiKey}`,
+    'Authorization': `Bearer ${apiKey}`,
   };
 
   try {
@@ -254,7 +343,7 @@ async function fetchModelsForProvider(provider: ProviderConfig): Promise<ModelCo
   }
 }
 
-async function discoverAllModels(silent = false): Promise<void> {
+async function discoverAllModels(store: ApiKeyStore, silent = false): Promise<void> {
   const providers = getProviders();
 
   if (providers.length === 0) {
@@ -267,7 +356,10 @@ async function discoverAllModels(silent = false): Promise<void> {
   }
 
   // Fetch models from every provider concurrently
-  const results = await Promise.all(providers.map(p => fetchModelsForProvider(p)));
+  const keys = await store.getMany(providers.map(p => p.id));
+  const results = await Promise.all(
+    providers.map(p => fetchModelsForProvider(p, keys.get(p.id) ?? ''))
+  );
 
   // Merge: existing user models stay, newly discovered are added/updated
   const existing = getModels();
@@ -332,7 +424,7 @@ async function promptForApiKey(providerName: string, currentValue = ''): Promise
   });
 }
 
-async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
+async function cmdAddProvider(store: ApiKeyStore, provider?: CustomLlmProvider): Promise<void> {
   // VS Code 1.104+ -- when this command is invoked as a managementCommand
   // from the Copilot model-picker panel, the webview keeps focus and immediately
   // dismisses any showInputBox that opens synchronously. A short settle-time
@@ -361,13 +453,16 @@ async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
   const providers = getProviders();
   // Replace if same URL already exists (keep existing slug)
   const idx = providers.findIndex(p => p.baseUrl === baseUrl);
+  let providerId: string;
   if (idx >= 0) {
-    providers[idx] = { ...providers[idx], name, baseUrl, apiKey };
+    providerId = providers[idx].id;
+    providers[idx] = { ...providers[idx], name, baseUrl };
   } else {
-    const id = uniqueSlug(name, providers.map(p => p.id));
-    providers.push({ id, name, baseUrl, apiKey });
+    providerId = uniqueSlug(name, providers.map(p => p.id));
+    providers.push({ id: providerId, name, baseUrl });
   }
   await saveProviders(providers);
+  await store.set(providerId, apiKey);
 
   // Safety net -- if the API key prompt was dismissed by a VS Code UI transition,
   // offer a second chance via notification action.
@@ -379,26 +474,21 @@ async function cmdAddProvider(provider?: CustomLlmProvider): Promise<void> {
       if (choice !== 'Add API key now') { return; }
       const key = await promptForApiKey(name);
       if (!key) { return; }
-      const current = getProviders();
-      const i = current.findIndex(p => p.baseUrl === baseUrl);
-      if (i >= 0) {
-        current[i].apiKey = key;
-        await saveProviders(current);
-        await discoverAllModels(false);
-        await cleanupLegacyByokEntries();
-        provider?.notifyModelsChanged();
-      }
+      await store.set(providerId, key);
+      await discoverAllModels(store, false);
+      await cleanupLegacyByokEntries();
+      provider?.notifyModelsChanged();
     });
   } else {
     vscode.window.showInformationMessage(`Custom LLM: Provider "${name}" saved. Fetching models...`);
   }
 
-  await discoverAllModels(false);
+  await discoverAllModels(store, false);
   await cleanupLegacyByokEntries();
   provider?.notifyModelsChanged();
 }
 
-async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
+async function cmdManageProviders(store: ApiKeyStore, provider: CustomLlmProvider): Promise<void> {
   // VS Code 1.104+ -- when invoked as managementCommand from the Copilot
   // model-picker (both gear icon and "Add Models" flows) the webview keeps
   // focus and can dismiss native dialogs opened synchronously. A short
@@ -409,15 +499,16 @@ async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
   if (providers.length === 0) {
     // Skip the info-message toast; jump straight to the add wizard so the
     // QuickPick / InputBox flow works correctly from the picker context.
-    await cmdAddProvider(provider);
+    await cmdAddProvider(store, provider);
     return;
   }
 
+  const keys = await store.getMany(providers.map(p => p.id));
   const items = [
     ...providers.map((p, i) => ({
       label: p.name,
       description: p.baseUrl,
-      detail: p.apiKey ? 'API key set' : 'No API key',
+      detail: keys.get(p.id) ? 'API key set (secure storage)' : 'No API key',
       index: i,
     })),
     { label: '$(add) Add new provider', description: '', detail: '', index: -1 },
@@ -430,7 +521,7 @@ async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
   if (!pick) { return; }
 
   if (pick.index === -1) {
-    await cmdAddProvider(provider);
+    await cmdAddProvider(store, provider);
     return;
   }
 
@@ -444,6 +535,7 @@ async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
     const removedId = providers[pick.index].id;
     providers.splice(pick.index, 1);
     await saveProviders(providers);
+    await store.delete(removedId);
     // Remove all models belonging to this provider
     const remaining = getModels().filter(m => m.providerId !== removedId);
     await saveModels(remaining);
@@ -476,24 +568,27 @@ async function cmdManageProviders(provider: CustomLlmProvider): Promise<void> {
     await saveProviders(providers);
     // No model re-tagging needed — models link by providerId (slug), not by URL
     vscode.window.showInformationMessage(`Custom LLM: "${p.name}" endpoint updated. Refreshing models...`);
-    await discoverAllModels(true);
+    await discoverAllModels(store, true);
 
   } else {
     // Edit API key
     const p = providers[pick.index];
-    const apiKey = await promptForApiKey(p.name, p.apiKey);
+    const apiKey = await promptForApiKey(p.name, await store.get(p.id));
     if (apiKey === undefined) { return; }
-    providers[pick.index].apiKey = apiKey;
-    await saveProviders(providers);
-    vscode.window.showInformationMessage(`Custom LLM: "${p.name}" API key updated. Refreshing models...`);
-    await discoverAllModels(true);
+    await store.set(p.id, apiKey);
+    vscode.window.showInformationMessage(
+      apiKey
+        ? `Custom LLM: "${p.name}" API key updated in secure storage. Refreshing models...`
+        : `Custom LLM: "${p.name}" API key removed from secure storage.`
+    );
+    await discoverAllModels(store, true);
   }
 
   await cleanupLegacyByokEntries();
   provider.notifyModelsChanged();
 }
 
-async function cmdTestConnection(): Promise<void> {
+async function cmdTestConnection(store: ApiKeyStore): Promise<void> {
   const providers = getProviders();
   if (providers.length === 0) {
     vscode.window.showWarningMessage(
@@ -508,11 +603,12 @@ async function cmdTestConnection(): Promise<void> {
   if (providers.length === 1) {
     selected = providers[0];
   } else {
+    const keys = await store.getMany(providers.map(p => p.id));
     const pick = await vscode.window.showQuickPick(
       providers.map((p, i) => ({
         label: p.name,
         description: p.baseUrl,
-        detail: p.apiKey ? 'API key set' : 'No API key',
+        detail: keys.get(p.id) ? 'API key set (secure storage)' : 'No API key',
         index: i,
       })),
       { title: 'Custom LLM -- Test connection', placeHolder: 'Select provider to test' }
@@ -521,13 +617,15 @@ async function cmdTestConnection(): Promise<void> {
     selected = providers[pick.index];
   }
 
+  const selectedKey = await store.get(selected.id);
+
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Custom LLM: Testing "${selected.name}"...`, cancellable: false },
     async () => {
       const baseUrl = selected.baseUrl.replace(/\/$/, '');
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        ...(selected.apiKey ? { 'Authorization': `Bearer ${selected.apiKey}` } : {}),
+        ...(selectedKey ? { 'Authorization': `Bearer ${selectedKey}` } : {}),
       };
       const t0 = Date.now();
 
@@ -596,50 +694,60 @@ async function cmdTestConnection(): Promise<void> {
 // ── Activate ───────────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
+  const apiKeys = new ApiKeyStore(context.secrets);
+
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBar.text = '$(check) Custom LLM';
   statusBar.tooltip = 'Custom LLM Provider';
   statusBar.command = 'custom-llm.manageProviders';
   statusBar.show();
-  const provider = new CustomLlmProvider(statusBar);
+  const provider = new CustomLlmProvider(apiKeys, statusBar);
   const registration = vscode.lm.registerLanguageModelChatProvider('custom-llm', provider);
 
   // Startup sequence:
   // 1. migrate legacy single-provider settings (pre-0.5)
   // 2. migrate providerUrl -> providerId (pre-slug versions)
-  // 3. discover models, clean up stale BYOK entries
+  // 3. move plaintext API keys out of settings.json into SecretStorage
+  // 4. discover models, clean up stale BYOK entries
   (async () => {
-    await migrateLegacySettings();
+    await migrateLegacySettings(apiKeys);
     await migrateToSlugIds();
-    await discoverAllModels(true);
+    const movedKeys = await migrateApiKeysToSecretStorage(apiKeys);
+    if (movedKeys > 0) {
+      vscode.window.showInformationMessage(
+        `Custom LLM: moved ${movedKeys} API key${movedKeys === 1 ? '' : 's'} out of settings.json into VS Code's encrypted secret storage.`
+      );
+    }
+    await discoverAllModels(apiKeys, true);
     await cleanupLegacyByokEntries();
     setTimeout(() => provider.notifyModelsChanged(), 2000);
   })();
 
   const addProviderCmd = vscode.commands.registerCommand(
-    'custom-llm.addProvider', () => cmdAddProvider(provider)
+    'custom-llm.addProvider', () => cmdAddProvider(apiKeys, provider)
   );
 
   const manageProvidersCmd = vscode.commands.registerCommand(
-    'custom-llm.manageProviders', () => cmdManageProviders(provider)
+    'custom-llm.manageProviders', () => cmdManageProviders(apiKeys, provider)
   );
 
   const refreshCmd = vscode.commands.registerCommand('custom-llm.refreshModels', async () => {
     vscode.window.showInformationMessage('Custom LLM: Fetching models from all providers...');
-    await discoverAllModels(false);
+    await discoverAllModels(apiKeys, false);
     await cleanupLegacyByokEntries();
     provider.notifyModelsChanged();
   });
 
   const testConnectionCmd = vscode.commands.registerCommand(
-    'custom-llm.testConnection', () => cmdTestConnection()
+    'custom-llm.testConnection', () => cmdTestConnection(apiKeys)
   );
 
   const cfgWatcher = vscode.workspace.onDidChangeConfiguration(e => {
     if (e.affectsConfiguration('customLlm.providers')) {
-      discoverAllModels(true).then(() => {
-        provider.notifyModelsChanged();
-      });
+      // A hand-edited settings.json may have re-introduced a plaintext key
+      migrateApiKeysToSecretStorage(apiKeys)
+        .then(() => discoverAllModels(apiKeys, true))
+        .then(() => provider.notifyModelsChanged());
     } else if (e.affectsConfiguration('customLlm.models')) {
       provider.notifyModelsChanged();
     }

@@ -125,9 +125,8 @@ Providers are stored in the `customLlm.providers` array. Each entry has the foll
 | `id` | Auto-generated slug used as a stable internal identifier (e.g. `"alibaba-dashscope"`). Set automatically — you don't need to write this by hand. |
 | `name` | Display name shown in the UI and info messages (e.g. `"Alibaba DashScope"`) |
 | `baseUrl` | Base URL ending with `/v1` |
-| `apiKey` | API key (`sk-…`). Leave empty if not required. |
 
-The `id` slug is derived from the provider name when you add it via the wizard. It stays stable even if you later rename the provider or change its URL — so the model list never gets orphaned.
+The `id` slug is derived from the provider name when you add it via the wizard. It stays stable even if you later rename the provider or change its URL — so the model list never gets orphaned, and the API key stays attached to the right provider.
 
 You can also edit settings directly in **User Settings JSON** (`Ctrl+Shift+P` → `Open User Settings (JSON)`):
 
@@ -136,25 +135,38 @@ You can also edit settings directly in **User Settings JSON** (`Ctrl+Shift+P` �
   {
     "id": "alibaba-dashscope",
     "name": "Alibaba DashScope",
-    "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1",
-    "apiKey": "sk-YOUR-KEY-HERE"
+    "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1"
   },
   {
     "id": "minimax",
     "name": "MiniMax",
-    "baseUrl": "https://api.minimaxi.chat/v1",
-    "apiKey": "YOUR-MINIMAX-KEY-HERE"
+    "baseUrl": "https://api.minimaxi.chat/v1"
   },
   {
     "id": "openrouter",
     "name": "OpenRouter",
-    "baseUrl": "https://openrouter.ai/api/v1",
-    "apiKey": "sk-or-YOUR-KEY-HERE"
+    "baseUrl": "https://openrouter.ai/api/v1"
   }
 ]
 ```
 
-> **Migration:** Existing configs without an `id` field are upgraded automatically on first launch — no manual action needed. Legacy `customLlm.baseUrl` / `customLlm.apiKey` settings (pre-v0.4.0) and the old `providerUrl` field on models (pre-v0.5.0) are both migrated silently.
+### 🔐 API keys
+
+API keys are **never** written to `settings.json`. They are stored with VS Code's [`SecretStorage`](https://code.visualstudio.com/api/references/vscode-api#SecretStorage) API, which is backed by the operating-system credential store (macOS Keychain, Windows Credential Manager, libsecret / gnome-keyring on Linux) and encrypted at rest. Each key is filed under the provider's `id`, so renaming a provider or changing its endpoint keeps the key intact.
+
+Set or change a key through the UI:
+
+```
+Ctrl+Shift+P → Custom LLM: Manage providers → <provider> → Edit API key
+```
+
+Leaving the input empty removes the stored key. Removing a provider deletes its key too.
+
+Because keys live outside settings, they are **not** carried by Settings Sync and are not visible to anything that can read your settings file — you set them once per machine.
+
+> **Migration:** On startup the extension moves any `apiKey` it finds in `customLlm.providers` into secret storage and rewrites the setting without it — in user, workspace *and* folder settings. You'll see a one-time notification when this happens. Existing configs without an `id` field are upgraded automatically as well. Legacy `customLlm.baseUrl` / `customLlm.apiKey` settings (pre-v0.4.0) and the old `providerUrl` field on models (pre-v0.5.0) are both migrated silently.
+>
+> A key that has already leaked into a committed `settings.json` should be rotated at the provider — migration removes the value locally, but cannot un-publish it.
 
 ### Model list
 
@@ -280,7 +292,7 @@ Not all models support image input. If you see `"This model does not support ima
 
 ### Migrating from v0.3.x or earlier
 
-The old `customLlm.baseUrl` and `customLlm.apiKey` settings are automatically migrated to the new `customLlm.providers` array on the first launch. If you need to re-run migration manually, remove the `customLlm.providers` entry from your settings and reload VS Code.
+The old `customLlm.baseUrl` and `customLlm.apiKey` settings are automatically migrated to the new `customLlm.providers` array on the first launch, with the key going into secret storage. If you need to re-run migration manually, remove the `customLlm.providers` entry from your settings and reload VS Code — note that this also orphans the stored keys, so you'll have to re-enter them via **Custom LLM: Manage providers**.
 
 ---
 

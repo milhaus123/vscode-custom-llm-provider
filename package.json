@@ -2,7 +2,7 @@
   "name": "vscode-custom-llm-provider",
   "displayName": "Custom LLM Provider",
   "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, ...) to GitHub Copilot Chat in VS Code.",
-  "version": "0.4.9",
+  "version": "0.5.0",
   "publisher": "MartinRiha",
   "author": {
     "name": "Martin Riha",
@@ -75,15 +75,18 @@
         "customLlm.providers": {
           "type": "array",
           "default": [],
-          "description": "List of OpenAI-compatible providers. Each item: { name, baseUrl, apiKey }",
+          "markdownDescription": "List of OpenAI-compatible providers. Each item: `{ id, name, baseUrl }`.\n\nAPI keys are **not** stored here — they live in VS Code's encrypted secret storage. Use the command **Custom LLM: Manage providers** to set or change a key.",
           "items": {
             "type": "object",
             "required": [
               "name",
-              "baseUrl",
-              "apiKey"
+              "baseUrl"
             ],
             "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable slug identifying this provider, e.g. alibaba-dashscope. Generated automatically; the API key in secret storage is filed under it."
+              },
               "name": {
                 "type": "string",
                 "description": "Display name, e.g. Alibaba DashScope"
@@ -94,7 +97,8 @@
               },
               "apiKey": {
                 "type": "string",
-                "description": "API key (sk-...)"
+                "markdownDeprecationMessage": "API keys are no longer kept in settings.json. Any value here is moved into VS Code's encrypted secret storage on startup and then removed from this file. Use **Custom LLM: Manage providers** to change a key.",
+                "deprecationMessage": "API keys are no longer kept in settings.json. Any value here is moved into VS Code's encrypted secret storage on startup and then removed from this file. Use \"Custom LLM: Manage providers\" to change a key."
               }
             }
           }
@@ -112,7 +116,7 @@
         "customLlm.apiKey": {
           "type": "string",
           "default": "",
-          "deprecationMessage": "Replaced by customLlm.providers. Will be migrated automatically."
+          "deprecationMessage": "Replaced by customLlm.providers. The key is moved into VS Code's encrypted secret storage automatically and removed from settings."
         }
       }
     }

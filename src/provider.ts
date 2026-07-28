@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ApiKeyStore } from './secrets';
 
 // OpenAI content part — used for multimodal (vision) messages
 type OpenAIContentPart =
@@ -358,7 +359,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeLanguageModelChatInformation = this._onDidChange.event;
 
-  constructor(private statusBar?: vscode.StatusBarItem) {
+  constructor(private readonly apiKeys: ApiKeyStore, private statusBar?: vscode.StatusBarItem) {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('customLlm')) {
         this._onDidChange.fire();
@@ -419,7 +420,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     const cfg = vscode.workspace.getConfiguration('customLlm');
 
     const models: ModelConfig[] = cfg.get('models') ?? [];
-    const providers: Array<{ id?: string; name: string; baseUrl: string; apiKey: string }> = cfg.get('providers') ?? [];
+    const providers: Array<{ id?: string; name: string; baseUrl: string; apiKey?: string }> = cfg.get('providers') ?? [];
     const modelCfg = models.find(m => m.id === model.id);
     if (!modelCfg) {
       logLine(`WARN: no ModelConfig found for model.id='${model.id}'. Configured model ids: [${models.map(m => m.id).join(', ')}]`);
@@ -442,7 +443,13 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     }
 
     const baseUrl: string = provider.baseUrl;
-    const apiKey: string  = provider.apiKey ?? '';
+    // Keys live in SecretStorage; `provider.apiKey` only still exists on a
+    // hand-edited settings.json that startup migration has not swept up yet.
+    const apiKey: string =
+      (provider.id ? await this.apiKeys.get(provider.id) : '') || provider.apiKey || '';
+    if (!apiKey) {
+      logLine(`[${model.id}] no API key for provider '${provider.id ?? provider.baseUrl}' — sending unauthenticated request`);
+    }
 
     let tools: OpenAITool[] | undefined;
     if (options.tools && options.tools.length > 0) {
