@@ -5,9 +5,20 @@ Works out of the box with **Alibaba DashScope (Qwen)**, **MiniMax**, **OpenRoute
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.119%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.5.1-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.2-brightgreen)](CHANGELOG.md)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=github-sponsors)](https://github.com/sponsors/milhaus123)
+
+---
+
+## 🆕 What's New in v0.5.2
+
+- **`maxOutputTokens` finally works** — requests were capped at 8192 no matter what the setting said, which left reasoning models returning empty content. The configured value is now sent as-is.
+- **Token limits read correctly from proxies** — `max_output_tokens` from LiteLLM's `/model/info` is picked up, and namespaced IDs such as `tensorix/z-ai/glm-5.2` match the built-in limits table instead of silently falling back to 8192.
+- **Refreshes no longer reset hand-tuned limits** — a value you set by hand survives model discovery.
+- **Clearer empty-response diagnostics** — the warning reports the `max_tokens` actually sent instead of the configured value.
+
+See the [changelog](CHANGELOG.md) for complete release notes.
 
 ---
 
@@ -206,10 +217,24 @@ Existing provider entries without an `id` are upgraded automatically. Legacy `cu
 | `name` | Display name shown in the model picker |
 | `providerId` | Stable provider slug referenced by the model |
 | `maxInputTokens` | Maximum input context reported to VS Code |
-| `maxOutputTokens` | Maximum generated output reported to VS Code |
+| `maxOutputTokens` | Output budget — reported to VS Code and sent as `max_tokens` on every request |
 | `imageInput` | Optional vision override; use `false` for a text-only model |
 
 When `imageInput` is omitted, the model is treated as image-capable because the standard OpenAI-compatible `/models` response does not advertise vision support. LiteLLM-compatible `/model/info` responses can set this automatically through `supports_vision`.
+
+#### Output budget and reasoning models
+
+`maxOutputTokens` is sent verbatim as `max_tokens`. Reasoning models (GLM, Qwen thinking modes, DeepSeek-R1, QwQ …) spend that budget on their chain of thought before writing any answer, so a budget that is too small produces a reply with no content at all. If **View → Output → Custom LLM** shows
+
+```text
+⚠️  EMPTY CONTENT — model produced 27615 chars of reasoning but 0 chars of content.
+```
+
+raise `maxOutputTokens` for that model; 32768 or more suits most reasoning models. The request log line shows the value actually sent as `max_tokens=…`.
+
+Discovery fills the field in from the endpoint when it reports one — `max_output_tokens` or `max_tokens` from LiteLLM's `/model/info`, `max_completion_tokens` or `context_length` from `/models`. When the endpoint reports nothing, a value you set by hand is kept as-is across refreshes; only models the extension has never seen a limit for fall back to a built-in guess.
+
+> **Editing over Remote SSH:** `customLlm.models` is a user setting, so it lives on whichever machine runs the extension host. In a Remote SSH window that is the **remote** host — edit it there, not in your local `settings.json`.
 
 ### Default models
 

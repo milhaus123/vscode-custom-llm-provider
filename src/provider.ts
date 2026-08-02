@@ -103,6 +103,7 @@ interface RequestStats {
   malformedChunks: number;
   summaryLogged: boolean;
   usage: { promptTokens: number; completionTokens: number; reasoningTokens: number } | null;
+  maxTokensSent: number;
 }
 
 function logSummary(
@@ -137,16 +138,24 @@ function logSummary(
       prompt_tokens: stats.usage.promptTokens,
       completion_tokens: stats.usage.completionTokens,
       reasoning_tokens: stats.usage.reasoningTokens,
+      max_tokens: stats.maxTokensSent,
       finish_reason: stats.finishReason,
     }));
   }
 
   if (stats.contentChunks === 0 && stats.toolCallChunks === 0) {
     if (stats.reasoningChunks > 0) {
+      // Report what was actually sent, not what is configured — those used to
+      // differ silently because requests were capped at 8192, so the advice
+      // "increase maxOutputTokens" was given to people who already had.
+      const configured = model.maxOutputTokens;
+      const mismatch = configured !== stats.maxTokensSent
+        ? ` (configured maxOutputTokens=${configured})`
+        : '';
       logLine(
         `[${reqId}] ⚠️  EMPTY CONTENT — model produced ${stats.reasoningChars} chars of reasoning but 0 chars of content. ` +
-        `Likely cause: max_tokens (${model.maxOutputTokens}) exhausted inside reasoning. ` +
-        `Increase maxOutputTokens for "${model.id}" to 32768+ in settings.`
+        `Likely cause: the output budget sent to the model (max_tokens=${stats.maxTokensSent}${mismatch}) was consumed by reasoning. ` +
+        `Raise maxOutputTokens for "${model.id}" in the customLlm.models setting — 32768+ suits most reasoning models.`
       );
     } else {
       logLine(
@@ -349,6 +358,26 @@ function containsImageContent(messages: readonly OpenAIMessage[]): boolean {
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+/** Used only when a model carries no usable maxOutputTokens value. */
+export const FALLBACK_MAX_OUTPUT_TOKENS = 8192;
+
+/**
+ * The `max_tokens` to send for a model.
+ *
+ * Requests used to be clamped with `Math.min(model.maxOutputTokens, 8192)`,
+ * which made the setting unreachable above 8192 — reasoning models then burned
+ * the whole budget on thinking and returned empty content, and even the
+ * extension's own defaults (qwen3.6-plus at 65536, kimi-k2.5 at 32768) could
+ * never be used. The configured value is now authoritative; the fallback only
+ * covers a missing or nonsensical one.
+ */
+export function resolveMaxOutputTokens(configured: number | undefined): number {
+  const value = Number(configured);
+  return Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : FALLBACK_MAX_OUTPUT_TOKENS;
 }
 
 function calculateDelay(attempt: number, initialDelayMs: number, maxDelayMs: number): number {
@@ -567,7 +596,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
       }));
     }
 
-    const safeMaxTokens = Math.min(model.maxOutputTokens, 8192);
+    const safeMaxTokens = resolveMaxOutputTokens(model.maxOutputTokens);
 
     for (let mi = 0; mi < messages.length; mi++) {
       const m = messages[mi];
@@ -616,6 +645,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
       malformedChunks: 0,
       summaryLogged: false,
       usage: null as { promptTokens: number; completionTokens: number; reasoningTokens: number } | null,
+      maxTokensSent: safeMaxTokens,
     };
     const startedAt = Date.now();
 
