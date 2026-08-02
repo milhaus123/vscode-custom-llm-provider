@@ -2,7 +2,7 @@
   "name": "vscode-custom-llm-provider",
   "displayName": "Custom LLM Provider",
   "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, ...) to GitHub Copilot Chat in VS Code.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "MartinRiha",
   "author": {
     "name": "Martin Riha",
@@ -106,7 +106,7 @@
         "customLlm.models": {
           "type": "array",
           "default": [],
-          "description": "Auto-populated by model discovery. Each item: { id, name, providerUrl, maxInputTokens, maxOutputTokens }"
+          "markdownDescription": "Auto-populated by model discovery. Each item: `{ id, name, providerId, maxInputTokens, maxOutputTokens }`.\n\nOptional `imageInput` marks whether the model accepts images. It is only set automatically when the endpoint reports it; otherwise models are assumed to be vision-capable. Set `\"imageInput\": false` on a text-only model to stop VS Code sending it images."
         },
         "customLlm.baseUrl": {
           "type": "string",

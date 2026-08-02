@@ -17,6 +17,7 @@ export interface ModelConfig {
   providerUrl?: string;  // @deprecated – kept only for backwards-compat migration
   maxInputTokens: number;
   maxOutputTokens: number;
+  imageInput?: boolean;  // vision support; only set when known, otherwise assumed true
 }
 
 // ── Fallback defaults ──────────────────────────────────────────────────────────
@@ -293,6 +294,7 @@ async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string):
             max_input_tokens?: number;
             supports_tool_choice?: boolean;
             supports_function_calling?: boolean;
+            supports_vision?: boolean;
           };
         }>;
       };
@@ -310,6 +312,9 @@ async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string):
               providerId: provider.id,
               maxInputTokens:  info.max_input_tokens ?? known.maxInputTokens,
               maxOutputTokens: info.max_tokens       ?? known.maxOutputTokens,
+              // Only recorded when the endpoint actually reports it — an absent
+              // flag means "unknown", which is treated as vision-capable.
+              ...(typeof info.supports_vision === 'boolean' ? { imageInput: info.supports_vision } : {}),
             };
           });
       }
@@ -370,7 +375,11 @@ async function discoverAllModels(store: ApiKeyStore, silent = false): Promise<vo
     const providerModels = results[i];
     if (!providerModels) { continue; }
     for (const m of providerModels) {
-      merged.set(m.id, m);
+      // Keep a manually set vision flag when the endpoint doesn't report one,
+      // so a refresh doesn't undo the user's override.
+      const previous = merged.get(m.id);
+      const imageInput = m.imageInput ?? previous?.imageInput;
+      merged.set(m.id, imageInput === undefined ? m : { ...m, imageInput });
       discovered++;
     }
   }

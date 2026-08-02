@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.5.1 — August 2026
+
+### Bug fixes
+
+- **Fixed:** images returned by tool calls (e.g. `#browser/screenshotPage`) never reached the model — multimodal models such as Qwen3.7 Plus replied *"Unfortunately, I cannot view this image"*. Three separate defects were involved:
+  - The provider never declared `capabilities.imageInput`, so VS Code treated every model as text-only and did not route image content to us at all. It is now declared per model.
+  - `toOpenAIMessages()` mapped every non-text part of a tool result to `''`, dropping image data on the floor. Images in a tool result are now forwarded in a follow-up `user` message (the OpenAI schema only accepts a plain string in a `tool` message, so they cannot be sent inline), with the `tool` message carrying a short placeholder so the turn is never empty.
+  - Message-level images were discarded whenever the same message also carried tool calls or tool results.
+- **Fixed:** the 400-error classifier reported "This model does not support image input" for unrelated failures. Matching bare `unsupported` / `does not support` / `invalid content type` meant errors like *"unsupported parameter: max_tokens"* or *"does not support tool_choice"* were surfaced as vision errors, making capable models look text-only. The check now requires that we actually sent an image **and** that the server's message names an image-ish concept in a rejecting phrase; everything else is reported verbatim.
+- **Fixed:** non-image data parts in tool results (`text/*`, `application/json`) were dropped instead of being decoded into the tool message — MCP tools returning JSON blobs lost their payload.
+- Data parts are now also recognised structurally, so tool results crossing an extension-host realm boundary (where `instanceof` fails) are handled like native ones.
+
+### Changes
+
+- `customLlm.models` entries accept an optional `imageInput` flag. It is set automatically when the endpoint reports vision support (LiteLLM `/model/info` → `supports_vision`) and preserved across model refreshes; models without the flag are assumed to be vision-capable. Set `"imageInput": false` on a text-only model to stop VS Code sending it images.
+- Request log lines now record whether a request carried images.
+
+---
+
 ## v0.5.0 — July 2026
 
 ### Security
