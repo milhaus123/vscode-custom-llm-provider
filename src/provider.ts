@@ -66,6 +66,7 @@ interface ModelConfig {
   providerUrl?: string;  // @deprecated – fallback for pre-migration configs
   maxInputTokens: number;
   maxOutputTokens: number;
+  imageInput?: boolean;  // vision support; undefined = assume yes (see provideLanguageModelChatInformation)
 }
 
 interface RetryConfig {
@@ -182,6 +183,31 @@ function isToolResultPartLike(value: unknown): value is { callId: string; conten
   return isObject(value) && typeof value.callId === 'string' && Array.isArray(value.content);
 }
 
+function isDataPartLike(value: unknown): value is { data: Uint8Array; mimeType: string } {
+  return isObject(value)
+    && typeof value.mimeType === 'string'
+    && (value.data instanceof Uint8Array || ArrayBuffer.isView(value.data as ArrayBufferView));
+}
+
+function isImageMime(mimeType: string): boolean {
+  return mimeType.startsWith('image/');
+}
+
+/** Data parts also carry text/JSON payloads (LanguageModelDataPart.text / .json). */
+function isTextualMime(mimeType: string): boolean {
+  return mimeType.startsWith('text/')
+    || mimeType === 'application/json'
+    || mimeType.endsWith('+json');
+}
+
+function decodeTextData(data: Uint8Array): string {
+  try {
+    return new TextDecoder().decode(data);
+  } catch {
+    return '';
+  }
+}
+
 function partDebugInfo(part: unknown): string {
   if (!isObject(part)) {
     return `type=${typeof part}`;
@@ -236,15 +262,63 @@ function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMess
       });
     }
 
+    // Images produced by a tool (e.g. a screenshot) cannot ride along in the
+    // `tool` message: the OpenAI schema — and DashScope, which follows it —
+    // only accepts a plain string there. They are carried over into a
+    // follow-up `user` message instead, which is the only role that takes
+    // image_url parts. Without this the screenshot was silently dropped and
+    // the model answered "I cannot view this image".
+    const carriedImages: Array<{ data: Uint8Array; mimeType: string }> = [];
+
     for (const tr of toolResultParts) {
-      const content = tr.content
-        .map((p) => {
-          if (p instanceof vscode.LanguageModelTextPart) return p.value;
-          if (isTextPartLike(p)) return p.value;
-          return '';
-        })
-        .join('');
+      const resultTexts: string[] = [];
+      const imagesBefore = carriedImages.length;
+
+      for (const p of tr.content) {
+        if (p instanceof vscode.LanguageModelTextPart) {
+          resultTexts.push(p.value);
+        } else if (p instanceof vscode.LanguageModelDataPart || isDataPartLike(p)) {
+          const dp = p as { data: Uint8Array; mimeType: string };
+          if (isImageMime(dp.mimeType)) {
+            carriedImages.push(dp);
+          } else if (isTextualMime(dp.mimeType)) {
+            resultTexts.push(decodeTextData(dp.data));
+          } else {
+            logLine(`[toOpenAIMessages] tool result data part ignored (mime=${dp.mimeType})`);
+          }
+        } else if (isTextPartLike(p)) {
+          resultTexts.push(p.value);
+        }
+      }
+
+      const imagesHere = carriedImages.length - imagesBefore;
+      let content = resultTexts.join('');
+      if (!content && imagesHere > 0) {
+        // An empty tool message makes some endpoints reject the turn outright.
+        content = imagesHere === 1
+          ? '[Tool returned an image — see the next message.]'
+          : `[Tool returned ${imagesHere} images — see the next message.]`;
+      }
       result.push({ role: 'tool', content, tool_call_id: tr.callId });
+    }
+
+    // Message-level images alongside tool calls/results were dropped by the
+    // old "no tool parts" guard — carry them over the same way.
+    if (toolCallParts.length > 0 || toolResultParts.length > 0) {
+      carriedImages.push(...imageParts);
+    }
+
+    if (carriedImages.length > 0) {
+      const contentParts: OpenAIContentPart[] = [
+        { type: 'text', text: carriedImages.length === 1
+          ? 'Image output from the preceding tool call:'
+          : 'Image output from the preceding tool call(s):' },
+      ];
+      for (const img of carriedImages) {
+        contentParts.push({ type: 'image_url', image_url: { url: toDataUrl(img.data, img.mimeType) } });
+      }
+      result.push({ role: 'user', content: contentParts });
+      logLine(`[toOpenAIMessages] forwarded ${carriedImages.length} tool-result image(s) as a user message`);
     }
 
     if (toolCallParts.length === 0 && toolResultParts.length === 0) {
@@ -266,6 +340,13 @@ function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMess
   return result;
 }
 
+/** True when any outgoing message actually carries image content. */
+function containsImageContent(messages: readonly OpenAIMessage[]): boolean {
+  return messages.some(m =>
+    Array.isArray(m.content) && m.content.some(p => p.type === 'image_url')
+  );
+}
+
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
@@ -280,10 +361,27 @@ function isRetryableError(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 504);
 }
 
+/**
+ * Whether a 400 body really says "this model can't take images".
+ *
+ * Deliberately strict: the message must name an image-ish concept *and* phrase
+ * it as a rejection. Matching bare "unsupported" / "does not support" made any
+ * unrelated 400 ("unsupported parameter: max_tokens", "does not support tool
+ * choice") surface as a vision error and made working multimodal models look
+ * text-only. Callers must additionally confirm images were actually sent.
+ */
+function looksLikeVisionRejection(message: string): boolean {
+  const lower = message.toLowerCase();
+  const mentionsImage = /\b(image|images|image_url|vision|multi-?modal|visual)\b/.test(lower);
+  if (!mentionsImage) { return false; }
+  return /(not support|unsupported|not allowed|not accept|invalid|cannot|can't|only support)/.test(lower);
+}
+
 async function fetchWithRetry(
   url: string,
   init: RequestInit,
-  retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG
+  retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG,
+  requestHasImages = false
 ): Promise<Response> {
   let lastError: Error | null = null;
 
@@ -312,18 +410,15 @@ async function fetchWithRetry(
         );
       }
 
-      if (status === 400) {
-        const lower = errorMessage.toLowerCase();
-        if (
-          lower.includes('image') || lower.includes('vision') || lower.includes('multimodal') ||
-          lower.includes('does not support') || lower.includes('unsupported') || lower.includes('invalid content type')
-        ) {
-          throw new Error(
-            `Custom LLM: This model does not support image input.\n` +
-            `Use a multimodal model (e.g. qwen-vl-max) for image analysis.\n` +
-            `Details: ${errorMessage}`
-          );
-        }
+      // Only claim "no image support" when we actually sent an image and the
+      // server said so — otherwise let the real error through verbatim.
+      if (status === 400 && requestHasImages && looksLikeVisionRejection(errorMessage)) {
+        throw new Error(
+          `Custom LLM: This model does not support image input.\n` +
+          `Use a multimodal model (e.g. qwen-vl-max) for image analysis, or set ` +
+          `"imageInput": false on this model in customLlm.models to stop VS Code sending images to it.\n` +
+          `Details: ${errorMessage}`
+        );
       }
 
       if (!isRetryableError(status)) {
@@ -402,7 +497,16 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
         maxInputTokens: m.maxInputTokens,
         maxOutputTokens: m.maxOutputTokens,
         showInModelPicker: true,
-        capabilities: { toolCalling: true },
+        capabilities: {
+          toolCalling: true,
+          // VS Code gates image attachment on this flag: leaving it unset made
+          // every model — including genuinely multimodal ones — look text-only,
+          // so screenshots from tools never reached the endpoint. We cannot
+          // detect vision support for an arbitrary OpenAI-compatible endpoint,
+          // so assume yes unless discovery or the user says otherwise. A model
+          // that really can't take images answers with a clear 400.
+          imageInput: m.imageInput !== false,
+        },
       };
     });
     logLine(`provideLanguageModelChatInformation(silent=${options.silent}): returning ${result.length} models`);
@@ -480,6 +584,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     }
 
     const oaiMessages = toOpenAIMessages(messages);
+    const hasImages = containsImageContent(oaiMessages);
     const body = JSON.stringify({
       model: model.id,
       messages: oaiMessages,
@@ -514,7 +619,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     };
     const startedAt = Date.now();
 
-    logLine(`[${reqId}] → POST ${baseUrl}/chat/completions  model=${model.id}  msgs=${messages.length}  tools=${tools?.length ?? 0}  max_tokens=${safeMaxTokens}`);
+    logLine(`[${reqId}] → POST ${baseUrl}/chat/completions  model=${model.id}  msgs=${messages.length}  tools=${tools?.length ?? 0}  images=${hasImages ? 'yes' : 'no'}  max_tokens=${safeMaxTokens}`);
     oaiMessages.forEach((m: any, i: number) => {
       const contentLen = typeof m.content === 'string' ? m.content.length : Array.isArray(m.content) ? `${m.content.length}parts` : 0;
       logLine(`[${reqId}] msg[${i}] role=${m.role} contentLen=${contentLen} tool_calls=${m.tool_calls?.length ?? 0} tool_call_id=${m.tool_call_id ?? '-'}`);
@@ -531,7 +636,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
         headers,
         body,
         signal: abortController.signal,
-      });
+      }, DEFAULT_RETRY_CONFIG, hasImages);
     } catch (e) {
       logLine(`[${reqId}] ✗ fetch failed: ${e instanceof Error ? e.message : String(e)}`);
       this.statusBar && (this.statusBar.text = '$(warning) Custom LLM');

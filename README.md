@@ -301,6 +301,12 @@ The extension hot-reloads on settings change, but it may take a few seconds. If 
 
 Not all models support image input. If you see `"This model does not support image input"`, switch to a multimodal model. For Alibaba DashScope, `qwen-vl-max` supports vision. Coding-focused models (`qwen3-coder-*`, `qwen3.6-plus`, etc.) are text-only.
 
+Because an OpenAI-compatible endpoint doesn't generally advertise vision support, every model is offered to VS Code as image-capable unless the endpoint says otherwise (LiteLLM's `/model/info` reports `supports_vision`). To stop VS Code sending images to a model you know is text-only, set `"imageInput": false` on its entry in `customLlm.models` — the flag survives model refreshes.
+
+### The model says it cannot see a screenshot from a tool
+
+Images returned by tools (`#browser/screenshotPage` and similar) are forwarded to the model as a separate message right after the tool result, because the OpenAI chat schema only accepts plain text in a `tool` message. If the model still reports it cannot see the image, check **View → Output → Custom LLM**: the request line shows `images=yes` when image content was actually sent. If it shows `images=no`, VS Code never handed the image to the extension — verify the model's `imageInput` flag isn't set to `false`.
+
 ### Migrating from v0.4.x or earlier
 
 Update to v0.5.0 and reload VS Code. Keys in v0.4.x `customLlm.providers` entries are moved to secret storage automatically. The older single-provider `customLlm.baseUrl` and `customLlm.apiKey` settings are also migrated, with the key stored securely.
