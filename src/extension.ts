@@ -51,11 +51,21 @@ const KNOWN_LIMITS: Array<[string, { maxInputTokens: number; maxOutputTokens: nu
   ['MiniMax',       { maxInputTokens: 262144,  maxOutputTokens: 8192   }],
 ];
 
+export const DEFAULT_LIMITS = { maxInputTokens: 131072, maxOutputTokens: 8192 };
+
+/**
+ * Proxies namespace their model IDs — LiteLLM serves `glm-5.2` as something
+ * like `tensorix/z-ai/glm-5.2`. Matching the raw ID against a bare prefix
+ * missed every one of those and silently handed back the 8192 default, so the
+ * last path segment is tried as well.
+ */
 function getKnownLimits(id: string) {
+  const candidates = [id, id.split('/').pop() ?? id];
   for (const [prefix, limits] of KNOWN_LIMITS) {
-    if (id.startsWith(prefix)) { return limits; }
+    const lowerPrefix = prefix.toLowerCase();
+    if (candidates.some(c => c.toLowerCase().startsWith(lowerPrefix))) { return limits; }
   }
-  return { maxInputTokens: 131072, maxOutputTokens: 8192 };
+  return DEFAULT_LIMITS;
 }
 
 function toDisplayName(id: string): string {
@@ -269,7 +279,30 @@ async function migrateToSlugIds(): Promise<void> {
 
 // ── Model discovery ────────────────────────────────────────────────────────────
 
-async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string): Promise<ModelConfig[] | null> {
+/**
+ * What an endpoint actually told us about a model. Token limits are left
+ * undefined when the endpoint didn't report them, so the merge step can tell a
+ * real value apart from a guess and avoid overwriting a hand-tuned setting
+ * with the built-in default.
+ */
+interface DiscoveredModel {
+  id: string;
+  name: string;
+  providerId: string;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+  imageInput?: boolean;
+}
+
+/** Endpoints disagree on the field name; treat 0 / null / negative as "not reported". */
+function reportedLimit(...values: Array<number | null | undefined>): number | undefined {
+  for (const v of values) {
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) { return Math.floor(v); }
+  }
+  return undefined;
+}
+
+async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string): Promise<DiscoveredModel[] | null> {
   if (!apiKey) { return null; }
 
   const baseUrl = provider.baseUrl.replace(/\/$/, '');
@@ -292,6 +325,7 @@ async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string):
           model_info?: {
             max_tokens?: number;
             max_input_tokens?: number;
+            max_output_tokens?: number;
             supports_tool_choice?: boolean;
             supports_function_calling?: boolean;
             supports_vision?: boolean;
@@ -304,14 +338,16 @@ async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string):
           .filter(m => !!m.model_name)
           .map(m => {
             const id = m.model_name!;
-            const known = getKnownLimits(id);
             const info = m.model_info ?? {};
             return {
               id,
               name: toDisplayName(id),
               providerId: provider.id,
-              maxInputTokens:  info.max_input_tokens ?? known.maxInputTokens,
-              maxOutputTokens: info.max_tokens       ?? known.maxOutputTokens,
+              maxInputTokens:  reportedLimit(info.max_input_tokens),
+              // `max_output_tokens` is what LiteLLM configs actually set; only
+              // reading `max_tokens` meant that value was ignored and every
+              // namespaced model fell back to the 8192 default.
+              maxOutputTokens: reportedLimit(info.max_output_tokens, info.max_tokens),
               // Only recorded when the endpoint actually reports it — an absent
               // flag means "unknown", which is treated as vision-capable.
               ...(typeof info.supports_vision === 'boolean' ? { imageInput: info.supports_vision } : {}),
@@ -329,20 +365,27 @@ async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string):
     if (!res.ok) { return null; }
 
     const json = await res.json() as {
-      data?: Array<{ id: string; context_length?: number; max_completion_tokens?: number }>;
+      data?: Array<{
+        id: string;
+        context_length?: number;
+        max_completion_tokens?: number;
+        max_output_tokens?: number;
+        top_provider?: { context_length?: number; max_completion_tokens?: number };
+      }>;
     };
     if (!Array.isArray(json?.data) || json.data.length === 0) { return null; }
 
-    return json.data.map(m => {
-      const known = getKnownLimits(m.id);
-      return {
-        id: m.id,
-        name: toDisplayName(m.id),
-        providerId: provider.id,
-        maxInputTokens:  m.context_length       ?? known.maxInputTokens,
-        maxOutputTokens: m.max_completion_tokens ?? known.maxOutputTokens,
-      };
-    });
+    return json.data.map(m => ({
+      id: m.id,
+      name: toDisplayName(m.id),
+      providerId: provider.id,
+      maxInputTokens:  reportedLimit(m.context_length, m.top_provider?.context_length),
+      maxOutputTokens: reportedLimit(
+        m.max_completion_tokens,
+        m.max_output_tokens,
+        m.top_provider?.max_completion_tokens,
+      ),
+    }));
   } catch {
     return null;
   }
@@ -366,7 +409,10 @@ async function discoverAllModels(store: ApiKeyStore, silent = false): Promise<vo
     providers.map(p => fetchModelsForProvider(p, keys.get(p.id) ?? ''))
   );
 
-  // Merge: existing user models stay, newly discovered are added/updated
+  // Merge: existing user models stay, newly discovered are added/updated.
+  // Precedence per field is: what the endpoint reported > what is already in
+  // settings > the built-in guess. Discovery used to replace entries wholesale,
+  // which reset hand-tuned token limits to the 8192 default on every refresh.
   const existing = getModels();
   const merged = new Map<string, ModelConfig>(existing.map(m => [m.id, m]));
 
@@ -375,11 +421,17 @@ async function discoverAllModels(store: ApiKeyStore, silent = false): Promise<vo
     const providerModels = results[i];
     if (!providerModels) { continue; }
     for (const m of providerModels) {
-      // Keep a manually set vision flag when the endpoint doesn't report one,
-      // so a refresh doesn't undo the user's override.
       const previous = merged.get(m.id);
+      const known = getKnownLimits(m.id);
       const imageInput = m.imageInput ?? previous?.imageInput;
-      merged.set(m.id, imageInput === undefined ? m : { ...m, imageInput });
+      merged.set(m.id, {
+        id: m.id,
+        name: previous?.name ?? m.name,
+        providerId: m.providerId,
+        maxInputTokens:  m.maxInputTokens  ?? previous?.maxInputTokens  ?? known.maxInputTokens,
+        maxOutputTokens: m.maxOutputTokens ?? previous?.maxOutputTokens ?? known.maxOutputTokens,
+        ...(imageInput === undefined ? {} : { imageInput }),
+      });
       discovered++;
     }
   }

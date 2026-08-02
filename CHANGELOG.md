@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.2 — August 2026
+
+### Bug fixes
+
+- **Fixed:** `maxOutputTokens` had no effect above 8192. Every request was clamped with `Math.min(model.maxOutputTokens, 8192)`, so raising the setting changed nothing — reasoning models spent the whole budget thinking and returned empty content, and the extension's own defaults (`qwen3.6-plus` at 65536, `kimi-k2.5` at 32768) were never reachable either. The configured value is now sent as-is; 8192 remains only as a fallback for a missing or invalid one. Fixes [#3](https://github.com/milhaus123/vscode-custom-llm-provider/issues/3).
+- **Fixed:** model discovery ignored `max_output_tokens` from LiteLLM's `/model/info` — only `max_tokens` was read — so a correctly configured proxy still landed on the built-in default. `max_output_tokens`, `max_completion_tokens` and OpenRouter's `top_provider` limits are now read as well, and non-positive values are treated as "not reported" instead of being taken literally.
+- **Fixed:** the built-in token-limit table was matched against the raw model ID, so namespaced proxy IDs such as `tensorix/z-ai/glm-5.2` never matched `glm-5` and silently fell back to 8192 output tokens. The last path segment is now tried too, case-insensitively.
+- **Fixed:** model discovery replaced existing entries wholesale, resetting hand-tuned `maxInputTokens` / `maxOutputTokens` (and a custom `name`) on every refresh. Per field, a value reported by the endpoint wins, then whatever is already in settings, then the built-in guess.
+- **Fixed:** the EMPTY CONTENT warning reported the *configured* `maxOutputTokens` while the request had actually sent the clamped 8192, and advised raising a number the user had often already raised. It now reports the value really sent, flags a mismatch with the configured one, and points at the right setting.
+
+### Changes
+
+- The structured `token_usage` log line includes the `max_tokens` sent with the request.
+
+---
+
 ## v0.5.1 — August 2026
 
 ### Bug fixes
