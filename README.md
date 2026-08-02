@@ -11,6 +11,18 @@ Works out of the box with **Alibaba DashScope (Qwen)**, **MiniMax**, **OpenRoute
 
 ---
 
+## 🆕 What's New in v0.5.1
+
+- **Tool-result images now reach multimodal models** — screenshots and other images returned by tools are forwarded in a compatible follow-up message instead of being dropped.
+- **Mixed tool results are preserved** — textual and JSON data returned alongside tool calls are decoded and sent to the model.
+- **More accurate vision errors** — unrelated `400` responses are no longer misreported as missing image support.
+- **Per-model vision control** — set `"imageInput": false` on a text-only model; LiteLLM's `supports_vision` metadata is detected automatically.
+- **Better diagnostics** — request logs show whether image content was sent.
+
+See the [changelog](CHANGELOG.md) for complete release notes.
+
+---
+
 ## 🎯 Primary Use Case — Alibaba Cloud Coding Plan
 
 This extension was developed primarily to bring **[Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index)** into Visual Studio Code.
@@ -30,6 +42,7 @@ Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder
 - **Dynamic model discovery** — models are fetched automatically from each provider's `/v1/models` (or `/model/info` for LiteLLM-compatible endpoints) on startup
 - **Stable provider IDs** — providers are identified by a human-readable slug (e.g. `alibaba-dashscope`), so renaming or changing a provider's URL never breaks the model list
 - **Image input support** — attach images directly in Copilot Chat (requires a multimodal model such as `qwen-vl-max`)
+- **Tool-result image support** — screenshots and other images returned by tools are forwarded to multimodal models
 - Full streaming support (Server-Sent Events)
 - **Tool calling support** — agent mode, `/fix`, `/edit`, `@workspace` all work
 - **Automatic retry with exponential backoff** for network failures and rate limits
@@ -45,6 +58,7 @@ Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder
 Open the Command Palette (`Ctrl+Shift+P`) and run **Custom LLM: Add provider**.
 
 The wizard will ask for:
+
 1. **Provider name** — e.g. `Alibaba DashScope`
 2. **Base URL** — e.g. `https://coding-intl.dashscope.aliyuncs.com/v1`
 3. **API key** — your `sk-…` key
@@ -70,7 +84,7 @@ Open Copilot Chat (`Ctrl+Alt+I`) → click the model name → your models appear
 
 Type `@qwen` at the start of a message to route **that single turn** through your custom model — regardless of which model is selected in the picker.
 
-```
+```text
 @qwen explain the auth flow in this codebase
 @qwen qwen3-coder-plus refactor this function
 ```
@@ -101,17 +115,20 @@ Type `@qwen` at the start of a message to route **that single turn** through you
 You can connect **multiple providers at once** — for example, use Alibaba DashScope and OpenRouter side by side. Each provider has its own URL and API key; models from all providers are merged into a single list in the Copilot Chat picker.
 
 **Add a provider:**
-```
+
+```text
 Ctrl+Shift+P → Custom LLM: Add provider
 ```
 
 **Manage providers (edit / remove):**
-```
+
+```text
 Ctrl+Shift+P → Custom LLM: Manage providers
 ```
 
 **Refresh the model list:**
-```
+
+```text
 Ctrl+Shift+P → Custom LLM: Refresh model list from API
 ```
 
@@ -163,7 +180,7 @@ Each key is stored under the provider's stable `id`, so renaming a provider or c
 
 Set or change a key through the UI:
 
-```
+```text
 Ctrl+Shift+P → Custom LLM: Manage providers → <provider> → Edit API key
 ```
 
@@ -183,9 +200,20 @@ Existing provider entries without an `id` are upgraded automatically. Legacy `cu
 
 `customLlm.models` is auto-populated by model discovery and does not normally need to be edited manually. The extension merges discovered models with any existing entries — custom entries are preserved.
 
+| Field | Description |
+| ----- | ----------- |
+| `id` | Model identifier sent to the provider |
+| `name` | Display name shown in the model picker |
+| `providerId` | Stable provider slug referenced by the model |
+| `maxInputTokens` | Maximum input context reported to VS Code |
+| `maxOutputTokens` | Maximum generated output reported to VS Code |
+| `imageInput` | Optional vision override; use `false` for a text-only model |
+
+When `imageInput` is omitted, the model is treated as image-capable because the standard OpenAI-compatible `/models` response does not advertise vision support. LiteLLM-compatible `/model/info` responses can set this automatically through `supports_vision`.
+
 ### Default models
 
-If no providers are configured or the API is unreachable, the extension falls back to these built-in defaults (all available in [Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index)):
+If no providers are configured and the model list is empty, the extension adds these built-in defaults (all available in [Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index)):
 
 | Model ID | Display Name | Provider | Context |
 | -------- | ----------- | -------- | ------- |
@@ -297,6 +325,10 @@ Check that the `baseUrl` ends with `/v1` and the model `id` values match exactly
 
 The extension hot-reloads on settings change, but it may take a few seconds. If models still don't update, reload the VS Code window: `Ctrl+Shift+P` → **Developer: Reload Window**.
 
+### Inspect request diagnostics
+
+Open **View → Output** and select **Custom LLM**. Each request includes the selected model, timing, streamed content and tool-call counts, finish reason, and whether images were included. Token usage is logged as structured JSON when the provider reports it.
+
 ### Image attachment returns an error
 
 Not all models support image input. If you see `"This model does not support image input"`, switch to a multimodal model. For Alibaba DashScope, `qwen-vl-max` supports vision. Coding-focused models (`qwen3-coder-*`, `qwen3.6-plus`, etc.) are text-only.
@@ -322,23 +354,20 @@ If a migrated key is missing, do not put it back into `settings.json`. Run **Cus
 git clone https://github.com/milhaus123/vscode-custom-llm-provider.git
 cd vscode-custom-llm-provider
 
-# Install dev dependencies
-npm install
+# Install the locked dependency versions
+npm ci
 
 # Compile TypeScript
 npm run compile
 
 # Package as .vsix
 npx vsce package
-# Publish to the marketplace
-npx vsce publish 
-
-# zvýší a publikuje
-npx vsce publish patch     
 
 # Install locally
 code --install-extension vscode-custom-llm-provider-*.vsix
 ```
+
+Maintainers can publish the current version with `npx vsce publish`, or increment and publish it in one step with `npx vsce publish patch`.
 
 ---
 
