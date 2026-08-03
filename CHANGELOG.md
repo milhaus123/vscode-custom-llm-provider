@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.5.3 — August 2026
+
+### Features
+
+- **Models can be hidden from the picker.** Set `"hidden": true` on an entry in `customLlm.models` and it stays out of the Copilot model picker. Provider catalogues list text-to-speech, image, video, embedding and rerank models that cannot serve a chat request, and until now every one of them landed in the picker. Implements [#9](https://github.com/milhaus123/vscode-custom-llm-provider/issues/9).
+  - Hiding, not deleting: an entry deleted from `customLlm.models` is added back by the next model refresh, which made curating the list by hand pointless. A hidden entry stays hidden.
+  - Only the picker is affected. The model stays in settings and remains resolvable, so a chat already using it keeps working and `"hidden": false` restores it immediately.
+  - Endpoints that report `model_info.mode` (LiteLLM) hide non-chat models automatically on first discovery — anything whose mode is not `chat` or `completion`, plus deployments marked `blocked`. An allowlist rather than a list of known-bad modes, so modes nobody has enumerated yet (video generation) are covered too.
+  - Automatic hiding applies only to models seen for the first time. Once an entry exists, the flag belongs to the user and no refresh overrides it.
+  - Models that report no mode are left visible — most OpenAI-compatible `/models` responses (Alibaba DashScope included) carry no modality information, and guessing there would hide working models. Use the flag by hand for those.
+  - The discovery notification reports how many models were hidden.
+
+---
+
 ## v0.5.2 — August 2026
 
 ### Bug fixes

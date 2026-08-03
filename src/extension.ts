@@ -18,6 +18,7 @@ export interface ModelConfig {
   maxInputTokens: number;
   maxOutputTokens: number;
   imageInput?: boolean;  // vision support; only set when known, otherwise assumed true
+  hidden?: boolean;      // kept out of the model picker; set by hand or on first discovery
 }
 
 // ── Fallback defaults ──────────────────────────────────────────────────────────
@@ -292,6 +293,24 @@ interface DiscoveredModel {
   maxInputTokens?: number;
   maxOutputTokens?: number;
   imageInput?: boolean;
+  hidden?: boolean;
+}
+
+/**
+ * `model_info.mode` values that can serve a chat completion. Catalogues also
+ * list text-to-speech, image, video, embedding and rerank models, and a chat
+ * request to any of those can only fail — they just add noise to the picker.
+ *
+ * An allowlist rather than a denylist of known-bad modes, so a mode nobody has
+ * seen yet (video generation, for one) is hidden instead of leaking through. A
+ * model that reports *no* mode is left visible: most OpenAI-compatible
+ * endpoints report nothing at all, and guessing there would hide real models.
+ */
+const CHAT_MODES = new Set(['chat', 'completion']);
+
+function isHiddenByMetadata(mode: unknown, blocked: unknown): boolean {
+  if (blocked === true) { return true; }
+  return typeof mode === 'string' && mode.length > 0 && !CHAT_MODES.has(mode.toLowerCase());
 }
 
 /** Endpoints disagree on the field name; treat 0 / null / negative as "not reported". */
@@ -329,6 +348,8 @@ async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string):
             supports_tool_choice?: boolean;
             supports_function_calling?: boolean;
             supports_vision?: boolean;
+            mode?: string;
+            blocked?: boolean;
           };
         }>;
       };
@@ -351,6 +372,9 @@ async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string):
               // Only recorded when the endpoint actually reports it — an absent
               // flag means "unknown", which is treated as vision-capable.
               ...(typeof info.supports_vision === 'boolean' ? { imageInput: info.supports_vision } : {}),
+              // Applied only to models we have never seen before (see the merge
+              // below), so unhiding one by hand survives the next refresh.
+              ...(isHiddenByMetadata(info.mode, info.blocked) ? { hidden: true } : {}),
             };
           });
       }
@@ -417,6 +441,7 @@ async function discoverAllModels(store: ApiKeyStore, silent = false): Promise<vo
   const merged = new Map<string, ModelConfig>(existing.map(m => [m.id, m]));
 
   let discovered = 0;
+  let hiddenCount = 0;
   for (let i = 0; i < providers.length; i++) {
     const providerModels = results[i];
     if (!providerModels) { continue; }
@@ -424,6 +449,10 @@ async function discoverAllModels(store: ApiKeyStore, silent = false): Promise<vo
       const previous = merged.get(m.id);
       const known = getKnownLimits(m.id);
       const imageInput = m.imageInput ?? previous?.imageInput;
+      // `hidden` is the user's call once the model exists in settings: an entry
+      // already there keeps whatever it has, so unhiding is not undone by the
+      // next refresh. Metadata only decides for models seen for the first time.
+      const hidden = previous ? previous.hidden : m.hidden;
       merged.set(m.id, {
         id: m.id,
         name: previous?.name ?? m.name,
@@ -431,8 +460,10 @@ async function discoverAllModels(store: ApiKeyStore, silent = false): Promise<vo
         maxInputTokens:  m.maxInputTokens  ?? previous?.maxInputTokens  ?? known.maxInputTokens,
         maxOutputTokens: m.maxOutputTokens ?? previous?.maxOutputTokens ?? known.maxOutputTokens,
         ...(imageInput === undefined ? {} : { imageInput }),
+        ...(hidden === undefined ? {} : { hidden }),
       });
       discovered++;
+      if (hidden) { hiddenCount++; }
     }
   }
 
@@ -441,7 +472,8 @@ async function discoverAllModels(store: ApiKeyStore, silent = false): Promise<vo
   if (!silent && discovered > 0) {
     const names = providers.map(p => p.name).join(', ');
     vscode.window.showInformationMessage(
-      `Custom LLM: ${discovered} models loaded from ${names}`
+      `Custom LLM: ${discovered} models loaded from ${names}` +
+      (hiddenCount > 0 ? ` — ${hiddenCount} hidden from the picker (non-chat models; set "hidden": false in customLlm.models to show one)` : '')
     );
   }
 }

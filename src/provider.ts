@@ -67,6 +67,7 @@ interface ModelConfig {
   maxInputTokens: number;
   maxOutputTokens: number;
   imageInput?: boolean;  // vision support; undefined = assume yes (see provideLanguageModelChatInformation)
+  hidden?: boolean;      // kept out of the model picker, but still usable if already selected
 }
 
 interface RetryConfig {
@@ -496,13 +497,19 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     _token: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.LanguageModelChatInformation[]> {
     const cfg = vscode.workspace.getConfiguration('customLlm');
-    const modelConfigs: ModelConfig[] = cfg.get('models') ?? [];
+    const allModels: ModelConfig[] = cfg.get('models') ?? [];
     const providers: Array<{ id?: string; name: string; baseUrl: string; apiKey?: string }> = cfg.get('providers') ?? [];
+
+    // Hiding is a picker-level concern only: the entry stays in customLlm.models
+    // and provideLanguageModelChatResponse still resolves it, so a chat already
+    // pinned to a hidden model keeps working and unhiding is just a flag flip.
+    const modelConfigs = allModels.filter(m => m.hidden !== true);
+    const hiddenCount = allModels.length - modelConfigs.length;
 
     if (options.silent) {
       const hasUsableProvider = providers.some(p => !!p.baseUrl);
       if (!hasUsableProvider || modelConfigs.length === 0) {
-        logLine(`provideLanguageModelChatInformation(silent=true): no providers/models configured, returning []`);
+        logLine(`provideLanguageModelChatInformation(silent=true): no providers/visible models configured, returning []`);
         return [];
       }
     }
@@ -538,7 +545,10 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
         },
       };
     });
-    logLine(`provideLanguageModelChatInformation(silent=${options.silent}): returning ${result.length} models`);
+    logLine(
+      `provideLanguageModelChatInformation(silent=${options.silent}): returning ${result.length} models` +
+      (hiddenCount > 0 ? ` (${hiddenCount} hidden)` : '')
+    );
     return result;
   }
 
