@@ -5,9 +5,18 @@ Works out of the box with **Alibaba DashScope (Qwen)**, **MiniMax**, **OpenRoute
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.119%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.5.2-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.3-brightgreen)](CHANGELOG.md)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=github-sponsors)](https://github.com/sponsors/milhaus123)
+
+---
+
+## 🆕 What's New in v0.5.3
+
+- **Hide models from the picker** — set `"hidden": true` on an entry in `customLlm.models`. Unlike deleting it, which the next refresh undoes, a hidden model stays hidden.
+- **Non-chat models filtered automatically** — text-to-speech, image, video, embedding and rerank models are hidden on first discovery when the endpoint reports a mode (LiteLLM). Your own choice always wins on later refreshes.
+
+See the [changelog](CHANGELOG.md) for complete release notes.
 
 ---
 
@@ -219,8 +228,30 @@ Existing provider entries without an `id` are upgraded automatically. Legacy `cu
 | `maxInputTokens` | Maximum input context reported to VS Code |
 | `maxOutputTokens` | Output budget — reported to VS Code and sent as `max_tokens` on every request |
 | `imageInput` | Optional vision override; use `false` for a text-only model |
+| `hidden` | Optional; `true` keeps the model out of the Copilot model picker |
 
 When `imageInput` is omitted, the model is treated as image-capable because the standard OpenAI-compatible `/models` response does not advertise vision support. LiteLLM-compatible `/model/info` responses can set this automatically through `supports_vision`.
+
+#### Hiding models from the picker
+
+Provider catalogues list more than chat models — text-to-speech, image and video generation, embeddings, rerankers. They cannot serve a chat request, so they only add noise to the model picker.
+
+Set `"hidden": true` on any entry to keep it out of the picker:
+
+```json
+{
+  "id": "qwen-tts",
+  "name": "Qwen Tts",
+  "providerId": "alibaba-dashscope",
+  "maxInputTokens": 131072,
+  "maxOutputTokens": 8192,
+  "hidden": true
+}
+```
+
+Hide rather than delete: a deleted entry is added back by the next model refresh, a hidden one stays hidden. Hiding only affects the picker — the entry stays in your settings, so a chat already using that model keeps working, and `"hidden": false` brings it straight back.
+
+Endpoints that report a model's mode — LiteLLM's `/model/info` — get this for free: models whose `mode` is not `chat` or `completion`, and deployments the proxy marks as `blocked`, are hidden the first time they are discovered. Only the first time: once an entry exists, the flag is yours, so unhiding one is never undone by a refresh. Plain OpenAI-compatible `/models` responses (Alibaba DashScope among them) carry no mode at all, so nothing is hidden automatically there — set the flag by hand.
 
 #### Output budget and reasoning models
 
