@@ -5,9 +5,20 @@ Works out of the box with **Alibaba DashScope (Qwen)**, **MiniMax**, **OpenRoute
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.119%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.5.3-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.4-brightgreen)](CHANGELOG.md)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=github-sponsors)](https://github.com/sponsors/milhaus123)
+
+---
+
+## 🆕 What's New in v0.5.4
+
+- **Thinking / reasoning effort control** — a new `customLlm.thinkingEffort` setting (`auto` | `off` | `low` | `medium` | `high`, default `auto`) controls how deeply a model reasons before answering. Add `"thinkingEffort": "<value>"` to a `customLlm.models` entry for a per-model override.
+  - **Qwen / DashScope** (`qwen*`) → `enable_thinking` + `thinking_budget` (1 024 / 8 192 / 32 768 tokens for low / medium / high)
+  - **OpenAI o-series, DeepSeek-V4, GPT-5** → `reasoning_effort: "low" | "medium" | "high"`
+  - **All other providers** → silently ignored
+
+See the [changelog](CHANGELOG.md) for complete release notes.
 
 ---
 
