@@ -84,6 +84,9 @@ Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder
 
 ## 🚀 Quick Start
 
+**Install from the VS Code Marketplace:**
+[Custom LLM Provider](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider) — or search for **"Custom LLM Provider"** in the VS Code Extensions panel (`Ctrl+Shift+X`).
+
 ### 1. Add your first provider
 
 Open the Command Palette (`Ctrl+Shift+P`) and run **Custom LLM: Add provider**.
