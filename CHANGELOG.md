@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.4 — August 2026
+
+### Features
+
+- **Thinking / reasoning effort control.** A new setting `customLlm.thinkingEffort` (`auto` | `off` | `low` | `medium` | `high`, default `auto`) controls how deeply a model reasons before answering. Implements [#10](https://github.com/milhaus123/vscode-custom-llm-provider/issues/10).
+  - `auto` — no parameter is sent; the model uses its own default.
+  - `off` — explicitly disables thinking where supported.
+  - `low / medium / high` — progressively deeper reasoning passes.
+  - **Per-model override:** add `"thinkingEffort": "<value>"` to any entry in `customLlm.models`; it wins over the global setting.
+  - The setting is translated automatically to the provider-specific field:
+    - **Qwen / DashScope** (`qwen*`) → `enable_thinking` + `thinking_budget` (1024 / 8192 / 32768 tokens for low / medium / high).
+    - **OpenAI o-series, DeepSeek-V4, GPT-5** → `reasoning_effort: "low" | "medium" | "high"`.
+    - **All other providers** → silently ignored; the request never errors out.
+  - The resolved effort level and the injected parameters are logged to `View → Output → Custom LLM`.
+
+---
+
 ## v0.5.3 — August 2026
 
 ### Features

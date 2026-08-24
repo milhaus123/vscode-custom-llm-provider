@@ -66,8 +66,9 @@ interface ModelConfig {
   providerUrl?: string;  // @deprecated – fallback for pre-migration configs
   maxInputTokens: number;
   maxOutputTokens: number;
-  imageInput?: boolean;  // vision support; undefined = assume yes (see provideLanguageModelChatInformation)
-  hidden?: boolean;      // kept out of the model picker, but still usable if already selected
+  imageInput?: boolean;      // vision support; undefined = assume yes (see provideLanguageModelChatInformation)
+  hidden?: boolean;          // kept out of the model picker, but still usable if already selected
+  thinkingEffort?: string;   // per-model override: "auto"|"off"|"low"|"medium"|"high"
 }
 
 interface RetryConfig {
@@ -478,6 +479,54 @@ async function fetchWithRetry(
   throw lastError || new Error('Request failed after all retries');
 }
 
+// ── Thinking effort ────────────────────────────────────────────────────────────
+
+type ThinkingEffort = 'auto' | 'off' | 'low' | 'medium' | 'high';
+
+/**
+ * Translate the user's thinking-effort setting into provider-specific request
+ * body fields.  Returns an object that is spread into the request body.
+ *
+ * Supported families:
+ *   - Qwen (qwen* prefix) / DASHSCOPE → enable_thinking + thinking_budget
+ *   - OpenAI o-series (o1/o3/o4), DeepSeek-V4 chat, GPT-5 → reasoning_effort
+ *   - Everything else → {} (silently ignored)
+ *
+ * Budget mapping:  low=1024  medium=8192  high=min(32768, maxOutputTokens)
+ */
+function buildThinkingParams(
+  modelId: string,
+  effort: string,
+  maxOutputTokens: number
+): Record<string, unknown> {
+  if (effort === 'auto') { return {}; }
+
+  const id = modelId.toLowerCase();
+
+  // ── Qwen / DashScope ────────────────────────────────────────────────────────
+  if (id.startsWith('qwen')) {
+    if (effort === 'off') {
+      return { enable_thinking: false };
+    }
+    const budgetMap: Record<string, number> = { low: 1024, medium: 8192, high: 32768 };
+    const budget = Math.min(budgetMap[effort] ?? 8192, maxOutputTokens - 1);
+    return { enable_thinking: true, thinking_budget: Math.max(budget, 512) };
+  }
+
+  // ── OpenAI reasoning / DeepSeek-V4 ─────────────────────────────────────────
+  const usesReasoningEffort =
+    /^(o1|o3|o4|gpt-5|deepseek-v4|deepseek-chat)/.test(id) ||
+    id.includes('reasoning');
+  if (usesReasoningEffort) {
+    if (effort === 'off' || effort === 'low')    { return { reasoning_effort: 'low' }; }
+    if (effort === 'medium')                      { return { reasoning_effort: 'medium' }; }
+    if (effort === 'high')                        { return { reasoning_effort: 'high' }; }
+  }
+
+  // ── Everything else ─────────────────────────────────────────────────────────
+  return {};
+}
+
 
 export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
 
@@ -624,6 +673,17 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
 
     const oaiMessages = toOpenAIMessages(messages);
     const hasImages = containsImageContent(oaiMessages);
+
+    // ── Thinking effort ────────────────────────────────────────────────────────
+    // Per-model override wins over global setting; "auto" means send nothing.
+    const globalEffort: string =
+      vscode.workspace.getConfiguration('customLlm').get<string>('thinkingEffort') ?? 'auto';
+    const effort: string = modelCfg?.thinkingEffort ?? globalEffort;
+    const thinkingParams = buildThinkingParams(model.id, effort, safeMaxTokens);
+    if (effort !== 'auto') {
+      logLine(`[setup] thinking effort=${effort}  model=${model.id}  params=${JSON.stringify(thinkingParams)}`);
+    }
+
     const body = JSON.stringify({
       model: model.id,
       messages: oaiMessages,
@@ -631,6 +691,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
       max_tokens: safeMaxTokens,
       stream_options: { include_usage: true },
       ...(tools && tools.length > 0 ? { tools } : {}),
+      ...thinkingParams,
     });
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };

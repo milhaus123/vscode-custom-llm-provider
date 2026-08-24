@@ -17,8 +17,9 @@ export interface ModelConfig {
   providerUrl?: string;  // @deprecated – kept only for backwards-compat migration
   maxInputTokens: number;
   maxOutputTokens: number;
-  imageInput?: boolean;  // vision support; only set when known, otherwise assumed true
-  hidden?: boolean;      // kept out of the model picker; set by hand or on first discovery
+  imageInput?: boolean;      // vision support; only set when known, otherwise assumed true
+  hidden?: boolean;          // kept out of the model picker; set by hand or on first discovery
+  thinkingEffort?: string;   // per-model override: "auto"|"off"|"low"|"medium"|"high"
 }
 
 // ── Fallback defaults ──────────────────────────────────────────────────────────

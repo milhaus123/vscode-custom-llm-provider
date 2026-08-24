@@ -2,7 +2,7 @@
   "name": "vscode-custom-llm-provider",
   "displayName": "Custom LLM Provider",
   "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, ...) to GitHub Copilot Chat in VS Code.",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "publisher": "MartinRiha",
   "author": {
     "name": "Martin Riha",
@@ -107,6 +107,25 @@
           "type": "array",
           "default": [],
           "markdownDescription": "Auto-populated by model discovery. Each item: `{ id, name, providerId, maxInputTokens, maxOutputTokens }`.\n\n`maxOutputTokens` is sent as `max_tokens` on every request. Reasoning models spend it on their chain of thought before answering, so raise it (32768+) if a model returns empty content. A value you set by hand is kept across model refreshes.\n\nOptional `imageInput` marks whether the model accepts images. It is only set automatically when the endpoint reports it; otherwise models are assumed to be vision-capable. Set `\"imageInput\": false` on a text-only model to stop VS Code sending it images.\n\nOptional `hidden` keeps a model out of the Copilot model picker without deleting it — deleting is undone by the next refresh, `\"hidden\": true` is not. Non-chat models (text-to-speech, image, video, embedding, rerank) are hidden automatically when the endpoint reports a mode; set `\"hidden\": false` to bring one back."
+        },
+        "customLlm.thinkingEffort": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "off",
+            "low",
+            "medium",
+            "high"
+          ],
+          "enumDescriptions": [
+            "Do not send any thinking parameter — let the model use its default.",
+            "Disable thinking (Qwen: enable_thinking=false; others: reasoning_effort=low).",
+            "Light reasoning pass (Qwen: thinking_budget=1024; others: reasoning_effort=low).",
+            "Medium reasoning pass (Qwen: thinking_budget=8192; others: reasoning_effort=medium).",
+            "Full reasoning pass (Qwen: thinking_budget=32768; others: reasoning_effort=high)."
+          ],
+          "default": "auto",
+          "markdownDescription": "Global default for how much the model 'thinks' before answering.\n\n- `auto` — send no parameter; the model decides.\n- `off` — explicitly disable thinking.\n- `low / medium / high` — progressively deeper reasoning.\n\nPer-model override: add `\"thinkingEffort\": \"<value>\"` to the model entry in `customLlm.models`.\n\nThe value is translated to the provider-specific API field automatically:\n- Qwen3 / DashScope → `enable_thinking` + `thinking_budget`\n- OpenAI o-series, DeepSeek-V4, GPT-5 → `reasoning_effort`\n- All others → silently ignored."
         },
         "customLlm.baseUrl": {
           "type": "string",
