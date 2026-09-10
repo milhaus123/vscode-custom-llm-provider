@@ -1,5 +1,21 @@
 import * as vscode from 'vscode';
 import { ApiKeyStore } from './secrets';
+import { DEFAULT_RETRY_CONFIG, VisionUnsupportedError, fetchWithRetry } from './http';
+import {
+  ModelConfig,
+  buildThinkingParams,
+  findModelByRegistrationId,
+  modelRegistrationId,
+  normalizeModelId,
+  resolveCapabilities,
+} from './modelRegistry';
+import { SseDataParser } from './sse';
+import {
+  reasoningConfigurationSchema,
+  resolveModelLimits,
+  resolveThinkingEffort,
+  supportsNativeReasoningPicker,
+} from './modelControls';
 
 // OpenAI content part — used for multimodal (vision) messages
 type OpenAIContentPart =
@@ -58,30 +74,6 @@ interface OpenAIStreamChunk {
     };
   };
 }
-
-interface ModelConfig {
-  id: string;
-  name: string;
-  providerId?: string;   // slug reference to ProviderConfig.id
-  providerUrl?: string;  // @deprecated – fallback for pre-migration configs
-  maxInputTokens: number;
-  maxOutputTokens: number;
-  imageInput?: boolean;      // vision support; undefined = assume yes (see provideLanguageModelChatInformation)
-  hidden?: boolean;          // kept out of the model picker, but still usable if already selected
-  thinkingEffort?: string;   // per-model override: "auto"|"off"|"low"|"medium"|"high"
-}
-
-interface RetryConfig {
-  maxRetries: number;
-  initialDelayMs: number;
-  maxDelayMs: number;
-}
-
-const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 3,
-  initialDelayMs: 1000,
-  maxDelayMs: 10000,
-};
 
 // Lazy-initialized output channel — visible in View → Output → "Custom LLM".
 let _logChannel: vscode.OutputChannel | undefined;
@@ -228,11 +220,19 @@ function partDebugInfo(part: unknown): string {
   return `ctor=${ctor} keys=[${keys}]`;
 }
 
-function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMessage[]): OpenAIMessage[] {
+export function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMessage[]): OpenAIMessage[] {
   const result: OpenAIMessage[] = [];
 
   for (const msg of messages) {
-    const isUser = msg.role === vscode.LanguageModelChatMessageRole.User;
+    // Copilot sends System=3 even though older stable vscode.d.ts lists only
+    // User and Assistant. Preserve its authority instead of making it history.
+    let role: 'system' | 'user' | 'assistant';
+    switch (msg.role as number) {
+      case 1: role = 'user'; break;
+      case 2: role = 'assistant'; break;
+      case 3: role = 'system'; break;
+      default: throw new Error(`Custom LLM: Unsupported message role ${msg.role}.`);
+    }
 
     const textParts: string[] = [];
     const imageParts: vscode.LanguageModelDataPart[] = [];
@@ -341,9 +341,9 @@ function toOpenAIMessages(messages: readonly vscode.LanguageModelChatRequestMess
         for (const img of imageParts) {
           contentParts.push({ type: 'image_url', image_url: { url: toDataUrl(img.data, img.mimeType) } });
         }
-        result.push({ role: isUser ? 'user' : 'assistant', content: contentParts });
+        result.push({ role, content: contentParts });
       } else {
-        result.push({ role: isUser ? 'user' : 'assistant', content: textParts.join('') });
+        result.push({ role, content: textParts.join('') });
       }
     }
   }
@@ -382,156 +382,11 @@ export function resolveMaxOutputTokens(configured: number | undefined): number {
     : FALLBACK_MAX_OUTPUT_TOKENS;
 }
 
-function calculateDelay(attempt: number, initialDelayMs: number, maxDelayMs: number): number {
-  const exponentialDelay = initialDelayMs * Math.pow(2, attempt);
-  const jitter = Math.random() * 0.3 * exponentialDelay;
-  return Math.min(exponentialDelay + jitter, maxDelayMs);
-}
-
-function isRetryableError(status: number): boolean {
-  return status === 429 || (status >= 500 && status <= 504);
-}
-
-/**
- * Whether a 400 body really says "this model can't take images".
- *
- * Deliberately strict: the message must name an image-ish concept *and* phrase
- * it as a rejection. Matching bare "unsupported" / "does not support" made any
- * unrelated 400 ("unsupported parameter: max_tokens", "does not support tool
- * choice") surface as a vision error and made working multimodal models look
- * text-only. Callers must additionally confirm images were actually sent.
- */
-function looksLikeVisionRejection(message: string): boolean {
-  const lower = message.toLowerCase();
-  const mentionsImage = /\b(image|images|image_url|vision|multi-?modal|visual)\b/.test(lower);
-  if (!mentionsImage) { return false; }
-  return /(not support|unsupported|not allowed|not accept|invalid|cannot|can't|only support)/.test(lower);
-}
-
-async function fetchWithRetry(
-  url: string,
-  init: RequestInit,
-  retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG,
-  requestHasImages = false
-): Promise<Response> {
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= retryConfig.maxRetries; attempt++) {
-    try {
-      const response = await fetch(url, init);
-
-      if (response.ok) {
-        return response;
-      }
-
-      const status = response.status;
-      const errorBody = await response.text().catch(() => 'Unknown error');
-
-      let errorMessage = errorBody;
-      try {
-        const parsed = JSON.parse(errorBody);
-        errorMessage = parsed?.error?.message ?? parsed?.message ?? parsed?.msg ?? errorBody;
-      } catch { /* not JSON */ }
-
-      if (status === 401) {
-        throw new Error(
-          'Custom LLM: Invalid or missing API key.\n' +
-          'Open Command Palette (Ctrl+Shift+P) → "Custom LLM: Manage providers" to update your API key.\n' +
-          `Details: ${errorMessage}`
-        );
-      }
-
-      // Only claim "no image support" when we actually sent an image and the
-      // server said so — otherwise let the real error through verbatim.
-      if (status === 400 && requestHasImages && looksLikeVisionRejection(errorMessage)) {
-        throw new Error(
-          `Custom LLM: This model does not support image input.\n` +
-          `Use a multimodal model (e.g. qwen-vl-max) for image analysis, or set ` +
-          `"imageInput": false on this model in customLlm.models to stop VS Code sending images to it.\n` +
-          `Details: ${errorMessage}`
-        );
-      }
-
-      if (!isRetryableError(status)) {
-        throw new Error(`Custom LLM (${status}): ${errorMessage}`);
-      }
-
-      lastError = new Error(`Custom LLM (${status}): ${errorMessage}`);
-
-      if (attempt < retryConfig.maxRetries) {
-        const delay = calculateDelay(attempt, retryConfig.initialDelayMs, retryConfig.maxDelayMs);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw error;
-      }
-
-      lastError = error instanceof Error ? error : new Error(String(error));
-
-      if (attempt < retryConfig.maxRetries) {
-        const delay = calculateDelay(attempt, retryConfig.initialDelayMs, retryConfig.maxDelayMs);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  }
-
-  throw lastError || new Error('Request failed after all retries');
-}
-
-// ── Thinking effort ────────────────────────────────────────────────────────────
-
-type ThinkingEffort = 'auto' | 'off' | 'low' | 'medium' | 'high';
-
-/**
- * Translate the user's thinking-effort setting into provider-specific request
- * body fields.  Returns an object that is spread into the request body.
- *
- * Supported families:
- *   - Qwen (qwen* prefix) / DASHSCOPE → enable_thinking + thinking_budget
- *   - OpenAI o-series (o1/o3/o4), DeepSeek-V4 chat, GPT-5 → reasoning_effort
- *   - Everything else → {} (silently ignored)
- *
- * Budget mapping:  low=1024  medium=8192  high=min(32768, maxOutputTokens)
- */
-function buildThinkingParams(
-  modelId: string,
-  effort: string,
-  maxOutputTokens: number
-): Record<string, unknown> {
-  if (effort === 'auto') { return {}; }
-
-  const id = modelId.toLowerCase();
-
-  // ── Qwen / DashScope ────────────────────────────────────────────────────────
-  if (id.startsWith('qwen')) {
-    if (effort === 'off') {
-      return { enable_thinking: false };
-    }
-    const budgetMap: Record<string, number> = { low: 1024, medium: 8192, high: 32768 };
-    const budget = Math.min(budgetMap[effort] ?? 8192, maxOutputTokens - 1);
-    return { enable_thinking: true, thinking_budget: Math.max(budget, 512) };
-  }
-
-  // ── OpenAI reasoning / DeepSeek-V4 ─────────────────────────────────────────
-  const usesReasoningEffort =
-    /^(o1|o3|o4|gpt-5|deepseek-v4|deepseek-chat)/.test(id) ||
-    id.includes('reasoning');
-  if (usesReasoningEffort) {
-    if (effort === 'off' || effort === 'low')    { return { reasoning_effort: 'low' }; }
-    if (effort === 'medium')                      { return { reasoning_effort: 'medium' }; }
-    if (effort === 'high')                        { return { reasoning_effort: 'high' }; }
-  }
-
-  // ── Everything else ─────────────────────────────────────────────────────────
-  return {};
-}
-
-
 export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
 
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeLanguageModelChatInformation = this._onDidChange.event;
+  private readonly warnedThinkingAdapters = new Set<string>();
 
   constructor(private readonly apiKeys: ApiKeyStore, private statusBar?: vscode.StatusBarItem) {
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -539,6 +394,20 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
         this._onDidChange.fire();
       }
     });
+  }
+
+  private async markModelTextOnly(modelConfig: ModelConfig): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration('customLlm');
+    const models: ModelConfig[] = cfg.get('models') ?? [];
+    const key = modelRegistrationId(modelConfig.providerId, modelConfig.id);
+    const index = models.findIndex(model => modelRegistrationId(model.providerId, model.id) === key);
+    if (index < 0 || models[index].imageInput === false) {
+      return;
+    }
+    models[index] = { ...models[index], imageInput: false };
+    await cfg.update('models', models, vscode.ConfigurationTarget.Global);
+    this._onDidChange.fire();
+    logLine(`[capabilities] learned imageInput=false for ${key} after upstream rejection`);
   }
 
   provideLanguageModelChatInformation(
@@ -569,28 +438,41 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
       ...providers.map(p => [p.baseUrl, p.name] as [string, string]),
     ]);
 
-    const result = modelConfigs.map((m) => {
+    const result = modelConfigs.flatMap((m) => {
       const providerLabel = nameMap.get(m.providerId ?? '')
         ?? nameMap.get(m.providerUrl ?? '')
         ?? 'Custom LLM';
+      const capabilities = resolveCapabilities(m);
+      let limits: ReturnType<typeof resolveModelLimits>;
+      try {
+        limits = resolveModelLimits(m);
+      } catch (error) {
+        logLine(`[configuration] ${error instanceof Error ? error.message : String(error)}`);
+        return [];
+      }
+      const reasoning = resolveThinkingEffort(m, cfg.get('thinkingEffort'));
+      logLine(
+        `[model] ${modelRegistrationId(m.providerId, m.id)} input=${limits.maxInputTokens} ` +
+        `output=${limits.maxOutputTokens} total=${limits.contextWindow} reasoning=${reasoning.effort}`
+      );
       return {
-        id: m.id,
+        id: modelRegistrationId(m.providerId, m.id),
         name: m.name,
-        family: m.id.split(/[-:.]/)[0],
+        family: normalizeModelId(m.id).split(/[-:.]/)[0],
         version: '1',
         detail: providerLabel,
-        maxInputTokens: m.maxInputTokens,
-        maxOutputTokens: m.maxOutputTokens,
+        tooltip: `${providerLabel} · Input: ${limits.maxInputTokens.toLocaleString('en-US')} · ` +
+          `Output: ${limits.maxOutputTokens.toLocaleString('en-US')} · ` +
+          `Total: ${limits.contextWindow.toLocaleString('en-US')} tokens · ` +
+          `Reasoning: ${reasoning.effort}. Command: Custom LLM: Set reasoning effort`,
+        maxInputTokens: limits.maxInputTokens,
+        maxOutputTokens: limits.maxOutputTokens,
+        ...(supportsNativeReasoningPicker(vscode.version)
+          ? { configurationSchema: reasoningConfigurationSchema(m, cfg.get('thinkingEffort')) } : {}),
         showInModelPicker: true,
         capabilities: {
-          toolCalling: true,
-          // VS Code gates image attachment on this flag: leaving it unset made
-          // every model — including genuinely multimodal ones — look text-only,
-          // so screenshots from tools never reached the endpoint. We cannot
-          // detect vision support for an arbitrary OpenAI-compatible endpoint,
-          // so assume yes unless discovery or the user says otherwise. A model
-          // that really can't take images answers with a clear 400.
-          imageInput: m.imageInput !== false,
+          toolCalling: capabilities.toolCalling,
+          imageInput: capabilities.imageInput,
         },
       };
     });
@@ -613,7 +495,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
 
     const models: ModelConfig[] = cfg.get('models') ?? [];
     const providers: Array<{ id?: string; name: string; baseUrl: string; apiKey?: string }> = cfg.get('providers') ?? [];
-    const modelCfg = models.find(m => m.id === model.id);
+    const modelCfg = findModelByRegistrationId(models, model.id);
     if (!modelCfg) {
       logLine(`WARN: no ModelConfig found for model.id='${model.id}'. Configured model ids: [${models.map(m => m.id).join(', ')}]`);
     }
@@ -634,7 +516,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
       throw new Error(msg);
     }
 
-    const baseUrl: string = provider.baseUrl;
+    const baseUrl: string = provider.baseUrl.replace(/\/+$/, '');
     // Keys live in SecretStorage; `provider.apiKey` only still exists on a
     // hand-edited settings.json that startup migration has not swept up yet.
     const apiKey: string =
@@ -655,7 +537,8 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
       }));
     }
 
-    const safeMaxTokens = resolveMaxOutputTokens(model.maxOutputTokens);
+    const safeMaxTokens = modelCfg
+      ? resolveModelLimits(modelCfg).maxOutputTokens : resolveMaxOutputTokens(model.maxOutputTokens);
 
     for (let mi = 0; mi < messages.length; mi++) {
       const m = messages[mi];
@@ -675,23 +558,35 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     const hasImages = containsImageContent(oaiMessages);
 
     // ── Thinking effort ────────────────────────────────────────────────────────
-    // Per-model override wins over global setting; "auto" means send nothing.
+    // Request/picker overrides precede model/global settings; explicit auto sends nothing.
     const globalEffort: string =
       vscode.workspace.getConfiguration('customLlm').get<string>('thinkingEffort') ?? 'auto';
-    const effort: string = modelCfg?.thinkingEffort ?? globalEffort;
-    const thinkingParams = buildThinkingParams(model.id, effort, safeMaxTokens);
-    if (effort !== 'auto') {
-      logLine(`[setup] thinking effort=${effort}  model=${model.id}  params=${JSON.stringify(thinkingParams)}`);
+    const reasoningSelection = resolveThinkingEffort(modelCfg, globalEffort, options);
+    const effort = reasoningSelection.effort;
+    const thinking = buildThinkingParams(modelCfg?.id ?? model.id, effort, safeMaxTokens);
+    logLine(
+      `[setup] thinking effort=${effort}` +
+      ` source=${reasoningSelection.source}` +
+      `${thinking.effectiveEffort ? ` effective=${thinking.effectiveEffort}` : ''}` +
+      ` model=${modelCfg?.id ?? model.id} params=${JSON.stringify(thinking.params)}`
+    );
+    if (thinking.warning) {
+      logLine(`[setup] ⚠ ${thinking.warning}`);
+      const warningKey = `${model.id}:${effort}:${thinking.warning}`;
+      if (!this.warnedThinkingAdapters.has(warningKey)) {
+        this.warnedThinkingAdapters.add(warningKey);
+        vscode.window.showWarningMessage(`Custom LLM: ${thinking.warning}`);
+      }
     }
 
     const body = JSON.stringify({
-      model: model.id,
+      model: modelCfg?.id ?? model.id,
       messages: oaiMessages,
       stream: true,
       max_tokens: safeMaxTokens,
       stream_options: { include_usage: true },
       ...(tools && tools.length > 0 ? { tools } : {}),
-      ...thinkingParams,
+      ...thinking.params,
     });
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -704,6 +599,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
 
     const abortController = new AbortController();
     const cancelDisposable = token.onCancellationRequested(() => abortController.abort());
+    if (token.isCancellationRequested) { abortController.abort(); }
 
     const reqId = Math.random().toString(36).slice(2, 8);
     const stats = {
@@ -737,24 +633,46 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
         headers,
         body,
         signal: abortController.signal,
-      }, DEFAULT_RETRY_CONFIG, hasImages);
+      }, DEFAULT_RETRY_CONFIG, hasImages, retry => {
+        logLine(
+          `[${reqId}] retry ${retry.nextAttempt}/${retry.maxAttempts} in ${retry.delayMs}ms ` +
+          `after ${retry.status !== undefined ? `HTTP ${retry.status}` : 'network error'}` +
+          (retry.requestId ? ` upstreamRequestId=${retry.requestId}` : '')
+        );
+      });
     } catch (e) {
+      if (token.isCancellationRequested) {
+        cancelDisposable.dispose();
+        this.statusBar && (this.statusBar.text = '$(check) Custom LLM');
+        logLine(`[${reqId}] cancelled before response headers`);
+        return;
+      }
+      if (e instanceof VisionUnsupportedError && modelCfg) {
+        try {
+          await this.markModelTextOnly(modelCfg);
+        } catch (settingsError) {
+          logLine(
+            `[${reqId}] could not persist imageInput=false: ` +
+            `${settingsError instanceof Error ? settingsError.message : String(settingsError)}`
+          );
+        }
+      }
       logLine(`[${reqId}] ✗ fetch failed: ${e instanceof Error ? e.message : String(e)}`);
       this.statusBar && (this.statusBar.text = '$(warning) Custom LLM');
-      throw e;
-    } finally {
       cancelDisposable.dispose();
+      throw e;
     }
 
     if (!response.ok || !response.body) {
       const err = await response.text();
       logLine(`[${reqId}] ✗ HTTP ${response.status}: ${err.substring(0, 4000)}`);
+      cancelDisposable.dispose();
       throw new Error(`Custom LLM (${response.status}): ${err}`);
     }
 
     const decoder = new TextDecoder();
     const reader = response.body.getReader();
-    let buffer = '';
+    const sse = new SseDataParser();
 
     const IDLE_MS = 60_000;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -768,6 +686,28 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     resetIdle();
 
     const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
+    const reportPendingToolCalls = (reason: string): void => {
+      for (const [, call] of pendingToolCalls) {
+        if (!call.name) {
+          logLine(`[${reqId}] ⚠ skipping tool_call with empty name (id=${call.id})`);
+          continue;
+        }
+        try {
+          const input = JSON.parse(call.arguments || '{}');
+          logLine(
+            `[${reqId}] tool_call (${reason}): id=${call.id} name=${call.name} argsChars=${call.arguments.length}`
+          );
+          progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, input));
+        } catch (e) {
+          logLine(
+            `[${reqId}] tool_call bad JSON (${reason}): id=${call.id} name=${call.name} ` +
+            `err=${e instanceof Error ? e.message : e}`
+          );
+          progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, {}));
+        }
+      }
+      pendingToolCalls.clear();
+    };
 
     // State machine for filtering <think>...</think> blocks (Qwen3 extended thinking).
     // 'detect' = waiting to see whether stream starts with <think>;
@@ -775,38 +715,19 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     // 'pass'   = normal content, pass directly to progress.
     let thinkState: 'detect' | 'skip' | 'pass' = 'detect';
     let thinkBuf = '';
+    let streamFailed = false;
 
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-        if (token.isCancellationRequested) break;
-        resetIdle();
+        const payloads = done
+          ? sse.finish(decoder.decode())
+          : sse.push(decoder.decode(value, { stream: true }));
+        if (!done) { resetIdle(); }
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data:')) continue;
-
-          const data = trimmed.slice(5).trim();
+        for (const data of payloads) {
           if (data === '[DONE]') {
-            for (const [, call] of pendingToolCalls) {
-              if (!call.name) {
-                logLine(`[${reqId}] ⚠ skipping tool_call with empty name (id=${call.id})`);
-                continue;
-              }
-              try {
-                const input = JSON.parse(call.arguments || '{}');
-                logLine(`[${reqId}] tool_call (DONE): id=${call.id} name=${call.name}`);
-                progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, input));
-              } catch (e) {
-                logLine(`[${reqId}] tool_call bad JSON (DONE): id=${call.id} name=${call.name} err=${e instanceof Error ? e.message : e}`);
-                progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, {}));
-              }
-            }
+            reportPendingToolCalls('DONE');
             logSummary(reqId, stats, startedAt, model);
             return;
           }
@@ -887,21 +808,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
             }
 
             if (choice.finish_reason === 'tool_calls') {
-              for (const [, call] of pendingToolCalls) {
-                if (!call.name) {
-                  logLine(`[${reqId}] ⚠ skipping tool_call with empty name (id=${call.id})`);
-                  continue;
-                }
-                try {
-                  const input = JSON.parse(call.arguments || '{}');
-                  logLine(`[${reqId}] tool_call: id=${call.id} name=${call.name} args=${call.arguments.slice(0, 200)}`);
-                  progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, input));
-                } catch (e) {
-                  logLine(`[${reqId}] tool_call bad JSON: id=${call.id} name=${call.name} err=${e instanceof Error ? e.message : e}`);
-                  progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, {}));
-                }
-              }
-              pendingToolCalls.clear();
+              reportPendingToolCalls('finish_reason');
               logSummary(reqId, stats, startedAt, model, 'tool_calls');
               return;
             }
@@ -909,18 +816,27 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
             stats.malformedChunks++;
           }
         }
+        if (done) { break; }
       }
+      // Some compatible endpoints close the stream without a final [DONE].
+      reportPendingToolCalls('eof');
     } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError' && token.isCancellationRequested) {
+        logSummary(reqId, stats, startedAt, model, 'cancelled');
+        return;
+      }
       if (e instanceof Error && e.name !== 'AbortError') {
         logLine(`[${reqId}] ✗ stream error: ${e.message}`);
       }
       logSummary(reqId, stats, startedAt, model, e instanceof Error ? e.name : 'error');
+      streamFailed = true;
       this.statusBar && (this.statusBar.text = '$(warning) Custom LLM');
       throw e;
     } finally {
       if (idleTimer) clearTimeout(idleTimer);
+      cancelDisposable.dispose();
       reader.releaseLock();
-      this.statusBar && (this.statusBar.text = '$(check) Custom LLM');
+      this.statusBar && (this.statusBar.text = streamFailed ? '$(warning) Custom LLM' : '$(check) Custom LLM');
     }
     logSummary(reqId, stats, startedAt, model, token.isCancellationRequested ? 'cancelled' : 'done');
   }

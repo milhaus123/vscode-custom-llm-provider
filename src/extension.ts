@@ -2,24 +2,22 @@ import * as vscode from 'vscode';
 import { CustomLlmProvider } from './provider';
 import { registerChatParticipant } from './participant';
 import { ApiKeyStore } from './secrets';
+import {
+  DiscoveredModel,
+  ModelConfig,
+  ThinkingEffort,
+  getModelProfile,
+  mergeDiscoveredModels,
+  modelRegistrationId,
+  resolveCapabilities,
+} from './modelRegistry';
+import { reasoningChoices, resolveModelLimits, resolveThinkingEffort } from './modelControls';
 
 export interface ProviderConfig {
   id: string;           // slug, e.g. "alibaba-dashscope" — stable identity, independent of name/URL
   name: string;
   baseUrl: string;
   apiKey?: string;      // @deprecated – never written any more; read once, then moved to SecretStorage
-}
-
-export interface ModelConfig {
-  id: string;
-  name: string;
-  providerId: string;    // references ProviderConfig.id
-  providerUrl?: string;  // @deprecated – kept only for backwards-compat migration
-  maxInputTokens: number;
-  maxOutputTokens: number;
-  imageInput?: boolean;      // vision support; only set when known, otherwise assumed true
-  hidden?: boolean;          // kept out of the model picker; set by hand or on first discovery
-  thinkingEffort?: string;   // per-model override: "auto"|"off"|"low"|"medium"|"high"
 }
 
 // ── Fallback defaults ──────────────────────────────────────────────────────────
@@ -41,37 +39,24 @@ const DEFAULT_MODELS: Omit<ModelConfig, 'providerId'>[] = [
   { id: 'MiniMax-M2.5',         name: 'MiniMax M2.5',      maxInputTokens: 262144,  maxOutputTokens: 8192  },
 ];
 
-// Known token limits per model ID prefix
-const KNOWN_LIMITS: Array<[string, { maxInputTokens: number; maxOutputTokens: number }]> = [
-  ['qwen3.6-plus',  { maxInputTokens: 1000000, maxOutputTokens: 65536  }],
-  ['qwen3.5-plus',  { maxInputTokens: 1000000, maxOutputTokens: 16384  }],
-  ['qwen3-max',     { maxInputTokens: 131072,  maxOutputTokens: 8192   }],
-  ['qwen3-coder',   { maxInputTokens: 131072,  maxOutputTokens: 8192   }],
-  ['kimi-k2',       { maxInputTokens: 262144,  maxOutputTokens: 32768  }],
-  ['glm-5',         { maxInputTokens: 204800,  maxOutputTokens: 16384  }],
-  ['glm-4',         { maxInputTokens: 131072,  maxOutputTokens: 8192   }],
-  ['MiniMax',       { maxInputTokens: 262144,  maxOutputTokens: 8192   }],
-];
-
-export const DEFAULT_LIMITS = { maxInputTokens: 131072, maxOutputTokens: 8192 };
-
-/**
- * Proxies namespace their model IDs — LiteLLM serves `glm-5.2` as something
- * like `tensorix/z-ai/glm-5.2`. Matching the raw ID against a bare prefix
- * missed every one of those and silently handed back the 8192 default, so the
- * last path segment is tried as well.
- */
-function getKnownLimits(id: string) {
-  const candidates = [id, id.split('/').pop() ?? id];
-  for (const [prefix, limits] of KNOWN_LIMITS) {
-    const lowerPrefix = prefix.toLowerCase();
-    if (candidates.some(c => c.toLowerCase().startsWith(lowerPrefix))) { return limits; }
-  }
-  return DEFAULT_LIMITS;
-}
-
 function toDisplayName(id: string): string {
   return id.split(/[-_.]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+}
+
+function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function validateBaseUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return 'Use an http:// or https:// URL.';
+    }
+  } catch {
+    return 'Enter a valid endpoint URL.';
+  }
+  return undefined;
 }
 
 // ── Slug helpers ───────────────────────────────────────────────────────────────
@@ -282,22 +267,6 @@ async function migrateToSlugIds(): Promise<void> {
 // ── Model discovery ────────────────────────────────────────────────────────────
 
 /**
- * What an endpoint actually told us about a model. Token limits are left
- * undefined when the endpoint didn't report them, so the merge step can tell a
- * real value apart from a guess and avoid overwriting a hand-tuned setting
- * with the built-in default.
- */
-interface DiscoveredModel {
-  id: string;
-  name: string;
-  providerId: string;
-  maxInputTokens?: number;
-  maxOutputTokens?: number;
-  imageInput?: boolean;
-  hidden?: boolean;
-}
-
-/**
  * `model_info.mode` values that can serve a chat completion. Catalogues also
  * list text-to-speech, image, video, embedding and rerank models, and a chat
  * request to any of those can only fail — they just add noise to the picker.
@@ -323,11 +292,9 @@ function reportedLimit(...values: Array<number | null | undefined>): number | un
 }
 
 async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string): Promise<DiscoveredModel[] | null> {
-  if (!apiKey) { return null; }
-
-  const baseUrl = provider.baseUrl.replace(/\/$/, '');
+  const baseUrl = provider.baseUrl.replace(/\/+$/, '');
   const headers: Record<string, string> = {
-    'Authorization': `Bearer ${apiKey}`,
+    ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
   };
 
   try {
@@ -370,9 +337,16 @@ async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string):
               // reading `max_tokens` meant that value was ignored and every
               // namespaced model fell back to the 8192 default.
               maxOutputTokens: reportedLimit(info.max_output_tokens, info.max_tokens),
-              // Only recorded when the endpoint actually reports it — an absent
-              // flag means "unknown", which is treated as vision-capable.
+              // Only recorded when the endpoint actually reports it. Unknown
+              // capabilities fail closed unless a model profile/user override enables them.
               ...(typeof info.supports_vision === 'boolean' ? { imageInput: info.supports_vision } : {}),
+              ...(
+                typeof info.supports_function_calling === 'boolean'
+                  ? { toolCalling: info.supports_function_calling }
+                  : typeof info.supports_tool_choice === 'boolean'
+                    ? { toolCalling: info.supports_tool_choice }
+                    : {}
+              ),
               // Applied only to models we have never seen before (see the merge
               // below), so unhiding one by hand survives the next refresh.
               ...(isHiddenByMetadata(info.mode, info.blocked) ? { hidden: true } : {}),
@@ -395,6 +369,8 @@ async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string):
         context_length?: number;
         max_completion_tokens?: number;
         max_output_tokens?: number;
+        supported_parameters?: string[];
+        architecture?: { input_modalities?: string[] };
         top_provider?: { context_length?: number; max_completion_tokens?: number };
       }>;
     };
@@ -410,8 +386,15 @@ async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string):
         m.max_output_tokens,
         m.top_provider?.max_completion_tokens,
       ),
+      ...(Array.isArray(m.architecture?.input_modalities)
+        ? { imageInput: m.architecture.input_modalities.some(x => x.toLowerCase() === 'image') }
+        : {}),
+      ...(Array.isArray(m.supported_parameters)
+        ? { toolCalling: m.supported_parameters.includes('tools') || m.supported_parameters.includes('tool_choice') }
+        : {}),
     }));
-  } catch {
+  } catch (error) {
+    console.error(`Custom LLM: model discovery failed for "${provider.name}":`, error);
     return null;
   }
 }
@@ -434,41 +417,15 @@ async function discoverAllModels(store: ApiKeyStore, silent = false): Promise<vo
     providers.map(p => fetchModelsForProvider(p, keys.get(p.id) ?? ''))
   );
 
-  // Merge: existing user models stay, newly discovered are added/updated.
-  // Precedence per field is: what the endpoint reported > what is already in
-  // settings > the built-in guess. Discovery used to replace entries wholesale,
-  // which reset hand-tuned token limits to the 8192 default on every refresh.
+  // Merge by provider + model ID. User-edited fields win, and fields unknown to
+  // this version survive through the merge instead of being reconstructed away.
   const existing = getModels();
-  const merged = new Map<string, ModelConfig>(existing.map(m => [m.id, m]));
+  const discoveredModels = results.flatMap(result => result ?? []);
+  const merged = mergeDiscoveredModels(existing, discoveredModels);
+  const discovered = discoveredModels.length;
+  const hiddenCount = merged.filter(model => model.hidden === true).length;
 
-  let discovered = 0;
-  let hiddenCount = 0;
-  for (let i = 0; i < providers.length; i++) {
-    const providerModels = results[i];
-    if (!providerModels) { continue; }
-    for (const m of providerModels) {
-      const previous = merged.get(m.id);
-      const known = getKnownLimits(m.id);
-      const imageInput = m.imageInput ?? previous?.imageInput;
-      // `hidden` is the user's call once the model exists in settings: an entry
-      // already there keeps whatever it has, so unhiding is not undone by the
-      // next refresh. Metadata only decides for models seen for the first time.
-      const hidden = previous ? previous.hidden : m.hidden;
-      merged.set(m.id, {
-        id: m.id,
-        name: previous?.name ?? m.name,
-        providerId: m.providerId,
-        maxInputTokens:  m.maxInputTokens  ?? previous?.maxInputTokens  ?? known.maxInputTokens,
-        maxOutputTokens: m.maxOutputTokens ?? previous?.maxOutputTokens ?? known.maxOutputTokens,
-        ...(imageInput === undefined ? {} : { imageInput }),
-        ...(hidden === undefined ? {} : { hidden }),
-      });
-      discovered++;
-      if (hidden) { hiddenCount++; }
-    }
-  }
-
-  await saveModels([...merged.values()]);
+  await saveModels(merged);
 
   if (!silent && discovered > 0) {
     const names = providers.map(p => p.name).join(', ');
@@ -510,7 +467,7 @@ async function cleanupLegacyByokEntries(): Promise<void> {
 async function promptForApiKey(providerName: string, currentValue = ''): Promise<string | undefined> {
   return vscode.window.showInputBox({
     title: `Custom LLM -- API Key for "${providerName}"`,
-    prompt: 'Paste your API key (e.g. sk-...). Required for most providers.',
+    prompt: 'Paste your API key (e.g. sk-...), or leave empty for an unauthenticated local endpoint.',
     placeHolder: 'sk-...',
     password: true,
     value: currentValue,
@@ -538,48 +495,229 @@ async function cmdAddProvider(store: ApiKeyStore, provider?: CustomLlmProvider):
     prompt: 'OpenAI-compatible endpoint URL (must end with /v1)',
     placeHolder: 'https://coding-intl.dashscope.aliyuncs.com/v1',
     ignoreFocusOut: true,
+    validateInput: validateBaseUrl,
   });
   if (!baseUrl) { return; }
+  const normalizedUrl = normalizeBaseUrl(baseUrl);
 
   const apiKey = await promptForApiKey(name);
   if (apiKey === undefined) { return; }
 
   const providers = getProviders();
   // Replace if same URL already exists (keep existing slug)
-  const idx = providers.findIndex(p => p.baseUrl === baseUrl);
+  const idx = providers.findIndex(p => normalizeBaseUrl(p.baseUrl) === normalizedUrl);
   let providerId: string;
   if (idx >= 0) {
     providerId = providers[idx].id;
-    providers[idx] = { ...providers[idx], name, baseUrl };
+    providers[idx] = { ...providers[idx], name, baseUrl: normalizedUrl };
   } else {
     providerId = uniqueSlug(name, providers.map(p => p.id));
-    providers.push({ id: providerId, name, baseUrl });
+    providers.push({ id: providerId, name, baseUrl: normalizedUrl });
   }
   await saveProviders(providers);
   await store.set(providerId, apiKey);
 
-  // Safety net -- if the API key prompt was dismissed by a VS Code UI transition,
-  // offer a second chance via notification action.
-  if (!apiKey) {
-    vscode.window.showWarningMessage(
-      `Custom LLM: Provider "${name}" saved without an API key.`,
-      'Add API key now'
-    ).then(async choice => {
-      if (choice !== 'Add API key now') { return; }
-      const key = await promptForApiKey(name);
-      if (!key) { return; }
-      await store.set(providerId, key);
-      await discoverAllModels(store, false);
-      await cleanupLegacyByokEntries();
-      provider?.notifyModelsChanged();
-    });
-  } else {
-    vscode.window.showInformationMessage(`Custom LLM: Provider "${name}" saved. Fetching models...`);
-  }
+  vscode.window.showInformationMessage(
+    `Custom LLM: Provider "${name}" saved${apiKey ? '' : ' without an API key'}. Fetching models...`
+  );
 
   await discoverAllModels(store, false);
   await cleanupLegacyByokEntries();
   provider?.notifyModelsChanged();
+}
+
+async function pickReasoningEffort(model: ModelConfig) {
+  const globalEffort = vscode.workspace.getConfiguration('customLlm').get<string>('thinkingEffort') ?? 'auto';
+  const effective = resolveThinkingEffort(model, globalEffort);
+  return vscode.window.showQuickPick(
+    reasoningChoices(model.id, `Use global setting (${globalEffort})`).map(choice => ({
+      ...choice,
+      description: (model.thinkingEffort ?? 'inherit') === choice.value ? 'Current selection' : undefined,
+    })),
+    {
+      title: `${model.name} -- Reasoning effort`,
+      placeHolder: `Current: ${effective.effort} (${effective.source}). Choose reasoning depth for this model.`,
+    }
+  );
+}
+
+async function cmdSetReasoningEffort(provider: CustomLlmProvider): Promise<void> {
+  const providers = new Map(getProviders().map(item => [item.id, item.name]));
+  const models = getModels().filter(model => getModelProfile(model.id).reasoning !== 'none');
+  if (!models.length) {
+    vscode.window.showInformationMessage('Custom LLM: No models with a known reasoning adapter. Add a provider or refresh its models.');
+    return;
+  }
+  const selected = await vscode.window.showQuickPick(
+    models.map(model => ({
+      label: model.name,
+      description: providers.get(model.providerId) ?? model.providerId,
+      detail: `${model.id} · Reasoning: ${model.thinkingEffort ?? 'use global setting'}`,
+      key: modelRegistrationId(model.providerId, model.id),
+    })),
+    { title: 'Custom LLM -- Set reasoning effort', placeHolder: 'Select the model whose reasoning depth you want to change' }
+  );
+  if (!selected) { return; }
+  const model = models.find(item => modelRegistrationId(item.providerId, item.id) === selected.key)!;
+  const choice = await pickReasoningEffort(model);
+  if (!choice) { return; }
+  const currentModels = getModels();
+  const index = currentModels.findIndex(item => modelRegistrationId(item.providerId, item.id) === selected.key);
+  if (index < 0) { return; }
+  const updated = { ...currentModels[index] };
+  if (choice.value === 'inherit') { delete updated.thinkingEffort; }
+  else { updated.thinkingEffort = choice.value; }
+  currentModels[index] = updated;
+  await saveModels(currentModels);
+  provider.notifyModelsChanged();
+  vscode.window.showInformationMessage(
+    `Custom LLM: ${updated.name} reasoning set to ${choice.label}. ` +
+    'If the model picker has a separate override, select "Use extension setting" there.'
+  );
+}
+
+async function cmdManageModels(
+  providerConfig: ProviderConfig,
+  provider: CustomLlmProvider,
+): Promise<void> {
+  while (true) {
+    const models = getModels().filter(model => model.providerId === providerConfig.id);
+    if (models.length === 0) {
+      vscode.window.showWarningMessage(
+        `Custom LLM: No models are available for "${providerConfig.name}". Refresh the model list first.`
+      );
+      return;
+    }
+
+    const selected = await vscode.window.showQuickPick(
+      models.map(model => {
+        const caps = resolveCapabilities(model);
+        const limits = resolveModelLimits(model);
+        return {
+          label: model.name,
+          description: model.id,
+          detail:
+            `Vision: ${caps.imageInput ? 'yes' : 'no'} (${caps.imageSource}) · ` +
+            `Tools: ${caps.toolCalling ? 'yes' : 'no'} (${caps.toolSource}) · ` +
+            `Reasoning: ${model.thinkingEffort ?? 'use global setting'} · ` +
+            `Input: ${limits.maxInputTokens} · Output: ${limits.maxOutputTokens} · Total: ${limits.contextWindow}`,
+          key: modelRegistrationId(model.providerId, model.id),
+        };
+      }),
+      {
+        title: `Custom LLM -- Models for ${providerConfig.name}`,
+        placeHolder: 'Select a model to configure',
+      }
+    );
+    if (!selected) { return; }
+
+    const currentModels = getModels();
+    const index = currentModels.findIndex(
+      model => modelRegistrationId(model.providerId, model.id) === selected.key
+    );
+    if (index < 0) { continue; }
+    const current = currentModels[index];
+
+    const action = await vscode.window.showQuickPick(
+      [
+        'Image input',
+        'Tool calling',
+        'Reasoning effort (thinking)',
+        'Total context window (input + output)',
+        'Maximum input tokens',
+        'Maximum output tokens',
+        current.hidden ? 'Show in model picker' : 'Hide from model picker',
+        'Reset capability overrides',
+      ],
+      { title: `${current.name} -- Configure model` }
+    );
+    if (!action) { continue; }
+
+    const updated: ModelConfig = { ...current };
+    if (action === 'Image input' || action === 'Tool calling') {
+      const field = action === 'Image input' ? 'imageInput' : 'toolCalling';
+      const resolved = resolveCapabilities(current)[field];
+      const choice = await vscode.window.showQuickPick(
+        [
+          { label: `Auto (${resolved ? 'enabled' : 'disabled'})`, value: undefined },
+          { label: 'Enabled', value: true },
+          { label: 'Disabled', value: false },
+        ],
+        { title: `${current.name} -- ${action}` }
+      );
+      if (!choice) { continue; }
+      if (choice.value === undefined) {
+        delete updated[field];
+      } else {
+        updated[field] = choice.value;
+      }
+    } else if (action === 'Reasoning effort (thinking)') {
+      const choice = await pickReasoningEffort(current);
+      if (!choice) { continue; }
+      if (choice.value === 'inherit') {
+        delete updated.thinkingEffort;
+      } else {
+        updated.thinkingEffort = choice.value as ThinkingEffort;
+      }
+    } else if (action === 'Maximum output tokens' || action === 'Maximum input tokens' || action === 'Total context window (input + output)') {
+      const limits = resolveModelLimits(current);
+      const field = action === 'Maximum output tokens' ? 'maxOutputTokens'
+        : action === 'Maximum input tokens' ? 'maxInputTokens' : 'contextWindow';
+      const value = await vscode.window.showInputBox({
+        title: `${current.name} -- ${action}`,
+        value: String(limits[field]),
+        prompt: field === 'contextWindow' ? 'Total input + output capacity. Output tokens are reserved within this limit.'
+          : field === 'maxInputTokens' ? 'Input-only limit. Setting this clears an explicit total context window.'
+            : 'Output budget, including reasoning tokens.',
+        validateInput: input => {
+          const parsed = Number(input);
+          if (!Number.isSafeInteger(parsed) || parsed <= 0) { return 'Enter a positive whole number.'; }
+          if (field === 'contextWindow' && parsed <= limits.maxOutputTokens) {
+            return `The total must exceed the output budget (${limits.maxOutputTokens}).`;
+          }
+          if (field === 'maxOutputTokens' && current.contextWindow !== undefined && parsed >= current.contextWindow) {
+            return `Output tokens must be less than the total context window (${current.contextWindow}).`;
+          }
+          return undefined;
+        },
+      });
+      if (value === undefined) { continue; }
+      updated[field] = Number(value);
+      if (field === 'maxInputTokens') { delete updated.contextWindow; }
+      if (updated.contextWindow !== undefined) {
+        updated.maxInputTokens = updated.contextWindow - updated.maxOutputTokens;
+      }
+    } else if (action === 'Reset capability overrides') {
+      delete updated.imageInput;
+      delete updated.toolCalling;
+      delete updated.thinkingEffort;
+    } else {
+      updated.hidden = !current.hidden;
+    }
+
+    currentModels[index] = updated;
+    await saveModels(currentModels);
+    provider.notifyModelsChanged();
+  }
+}
+
+async function cmdManageModelsCommand(provider: CustomLlmProvider): Promise<void> {
+  const providers = getProviders();
+  if (providers.length === 0) {
+    vscode.window.showWarningMessage('Custom LLM: Add a provider before managing models.');
+    return;
+  }
+  if (providers.length === 1) {
+    await cmdManageModels(providers[0], provider);
+    return;
+  }
+  const choice = await vscode.window.showQuickPick(
+    providers.map(item => ({ label: item.name, description: item.baseUrl, provider: item })),
+    { title: 'Custom LLM -- Select provider', placeHolder: 'Select whose models to manage' }
+  );
+  if (choice) {
+    await cmdManageModels(choice.provider, provider);
+  }
 }
 
 async function cmdManageProviders(store: ApiKeyStore, provider: CustomLlmProvider): Promise<void> {
@@ -620,12 +758,15 @@ async function cmdManageProviders(store: ApiKeyStore, provider: CustomLlmProvide
   }
 
   const action = await vscode.window.showQuickPick(
-    ['Edit name', 'Edit endpoint URL', 'Edit API key', 'Remove'],
+    ['Manage models', 'Edit name', 'Edit endpoint URL', 'Edit API key', 'Remove'],
     { title: `Provider: ${pick.label}` }
   );
   if (!action) { return; }
 
-  if (action === 'Remove') {
+  if (action === 'Manage models') {
+    await cmdManageModels(providers[pick.index], provider);
+
+  } else if (action === 'Remove') {
     const removedId = providers[pick.index].id;
     providers.splice(pick.index, 1);
     await saveProviders(providers);
@@ -656,9 +797,10 @@ async function cmdManageProviders(store: ApiKeyStore, provider: CustomLlmProvide
       value: p.baseUrl,
       placeHolder: 'https://coding-intl.dashscope.aliyuncs.com/v1',
       ignoreFocusOut: true,
+      validateInput: validateBaseUrl,
     });
     if (newUrl === undefined) { return; }
-    providers[pick.index].baseUrl = newUrl;
+    providers[pick.index].baseUrl = normalizeBaseUrl(newUrl);
     await saveProviders(providers);
     // No model re-tagging needed — models link by providerId (slug), not by URL
     vscode.window.showInformationMessage(`Custom LLM: "${p.name}" endpoint updated. Refreshing models...`);
@@ -792,7 +934,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBar.text = '$(check) Custom LLM';
-  statusBar.tooltip = 'Custom LLM Provider';
+  statusBar.tooltip = 'Custom LLM Provider — manage providers, models, and reasoning effort';
   statusBar.command = 'custom-llm.manageProviders';
   statusBar.show();
   const provider = new CustomLlmProvider(apiKeys, statusBar);
@@ -825,6 +967,14 @@ export function activate(context: vscode.ExtensionContext) {
     'custom-llm.manageProviders', () => cmdManageProviders(apiKeys, provider)
   );
 
+  const manageModelsCmd = vscode.commands.registerCommand(
+    'custom-llm.manageModels', () => cmdManageModelsCommand(provider)
+  );
+
+  const reasoningCmd = vscode.commands.registerCommand(
+    'custom-llm.setReasoningEffort', () => cmdSetReasoningEffort(provider)
+  );
+
   const refreshCmd = vscode.commands.registerCommand('custom-llm.refreshModels', async () => {
     vscode.window.showInformationMessage('Custom LLM: Fetching models from all providers...');
     await discoverAllModels(apiKeys, false);
@@ -848,7 +998,17 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   registerChatParticipant(context);
-  context.subscriptions.push(registration, addProviderCmd, manageProvidersCmd, refreshCmd, testConnectionCmd, cfgWatcher, provider);
+  context.subscriptions.push(
+    registration,
+    addProviderCmd,
+    manageProvidersCmd,
+    manageModelsCmd,
+    reasoningCmd,
+    refreshCmd,
+    testConnectionCmd,
+    cfgWatcher,
+    provider,
+  );
 }
 
 export function deactivate() {}

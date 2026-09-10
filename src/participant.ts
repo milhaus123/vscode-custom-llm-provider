@@ -22,7 +22,7 @@ export function registerChatParticipant(context: vscode.ExtensionContext): vscod
         stream.markdown(
           '⚠️ **No models available.**\n\n' +
           'Configure your endpoint first:\n' +
-          '`Ctrl+Shift+P` → **Custom LLM: Configure endpoint & API key**'
+          '`Ctrl+Shift+P` → **Custom LLM: Add provider**'
         );
         return;
       }
@@ -31,7 +31,8 @@ export function registerChatParticipant(context: vscode.ExtensionContext): vscod
       // Otherwise fall back to the first available model.
       let model = models[0];
       const firstWord = request.prompt.trim().split(/\s+/)[0];
-      const byId = models.find(m => m.id === firstWord);
+      const idMatches = models.filter(m => m.id === firstWord || m.id.endsWith(`::${firstWord}`));
+      const byId = idMatches.length === 1 ? idMatches[0] : undefined;
       if (byId) {
         model = byId;
       }
@@ -77,7 +78,10 @@ export function registerChatParticipant(context: vscode.ExtensionContext): vscod
 
       // Diagnostic: log entry into participant so we can see if Copilot Chat
       // ever reached @qwen vs. silently routing to gpt-4o-mini.
-      logLine(`[participant] @qwen request: prompt="${request.prompt.slice(0, 80).replace(/\n/g, ' ')}" selectedModel=${model.id} availableModels=${models.length}`);
+      logLine(
+        `[participant] @qwen request: promptChars=${request.prompt.length} ` +
+        `selectedModel=${model.id} availableModels=${models.length}`
+      );
 
       // Show which model is responding
       stream.markdown(`*[${model.name}]*\n\n`);

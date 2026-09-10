@@ -26,14 +26,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Compile
-        run: npm run compile
+      - name: Typecheck
+        run: npm run typecheck
 
-      - name: Lint
-        run: npx tsc --noEmit
+      - name: Unit tests
+        run: npm test
 
       - name: Package VSIX
-        run: npx vsce package --no-dependencies
+        run: npm run package
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4

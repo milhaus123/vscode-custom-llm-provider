@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.6.1 — September 10, 2026
+
+### Reasoning controls
+
+- Added **Custom LLM: Set reasoning effort**, a direct model-specific Command Palette control, alongside the existing model manager.
+- Advertise supported reasoning options through VS Code 1.122+'s optional native model-configuration channel and consume the selected value on requests. Older hosts retain command/settings controls; no API proposal opt-in is required.
+- Apply reasoning values in order: request override, native picker, per-model setting, global setting. Explicit `auto` now means provider default; inheriting the global setting is a separate choice.
+- Log both the selected effort and its source, including provider-default requests.
+
+### Context and request fixes
+
+- Preserve incoming VS Code `system` messages instead of mislabeling them as `assistant` history. Reject unknown roles rather than silently changing their meaning.
+- Added optional `contextWindow` for a total input + output budget. The input allowance is derived by subtracting the output reserve; existing input-only limits remain unchanged.
+- Added total/input/output controls to the model manager and exact token counts to model tooltips and registration logs. Documented why VS Code 1.122 can round a 1,016,384-token total to `2M`.
+- Include HTTP attempt counts and upstream request IDs in error diagnostics, and direct upstream connection failures to proxy/model-server logs.
+- Make retry backoff immediately cancellable and preserve the warning status after a stream failure.
+- Expanded regression coverage to 28 tests, including the actual compiled provider's metadata and HTTP request serialization.
+
+---
+
+## v0.6.0 — September 2026
+
+### Model capabilities and reasoning
+
+- Added a GLM-5.3 adapter. Namespaced IDs such as `zai-org/GLM-5.3` now send `thinking: { type: "enabled" }` with `reasoning_effort: "low" | "high" | "max"`.
+- Model-family matching now uses the final path component, fixing reasoning controls for namespaced Qwen and GLM deployments while preserving the exact upstream model ID in HTTP requests.
+- Unknown image and tool-calling capabilities now fail closed. Capabilities can come from endpoint metadata, a known model profile, or an explicit user override.
+- LiteLLM `supports_function_calling` / `supports_tool_choice` and richer `/models` modality metadata are now consumed during discovery.
+- A confirmed upstream image rejection marks the model as text-only and refreshes its VS Code registration.
+- Added **Custom LLM: Manage models** for vision, tool calling, reasoning effort, output-limit, and visibility changes without editing JSON.
+
+### Reliability
+
+- Fixed model collisions across providers. Registrations are now qualified by provider while requests continue to use the original upstream model ID.
+- Fixed model refresh dropping `thinkingEffort` and other user-edited fields.
+- User-edited model values now take precedence over newly discovered metadata.
+- Unauthenticated local endpoints can now participate in model discovery.
+- `400`, `401`, and `403` responses fail immediately instead of being retried. Transient network, `408`, `429`, and `5xx` failures retain exponential backoff, with `Retry-After` support.
+- Cancellation remains wired to the HTTP request for the entire response stream.
+- The SSE parser flushes a final event when a compatible endpoint closes without a trailing newline or `[DONE]`; accumulated tool calls are emitted on EOF.
+- Request diagnostics no longer log prompt excerpts or tool-call argument contents.
+
+### Development and releases
+
+- Added automated unit tests for model profiles, discovery merges, provider collisions, HTTP retries, image rejection classification, and incremental SSE parsing.
+- CI now runs typechecking and tests before packaging with a pinned `@vscode/vsce` dependency.
+- Replaced the workflow that pushed dependency updates directly to `main` with native Dependabot pull requests.
+- Marketplace publishing now requires both a matching tag/package version and the repository owner as release creator.
+- Replaced all four README graphics with clearly labeled illustrations of provider setup, credential storage, model capabilities, and participant routing. Clarified the text-only scope of `@qwen`.
+
+---
+
 ## v0.5.4 — August 2026
 
 ### Features

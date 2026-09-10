@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "module": "Node16",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "outDir": ".test-out",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": [
+    "src/modelRegistry.ts",
+    "src/modelControls.ts",
+    "src/provider.ts",
+    "src/http.ts",
+    "src/sse.ts",
+    "test/**/*.ts"
+  ]
+}

@@ -1,6 +1,14 @@
 src/**
 tsconfig.json
 .vscode/**
+.vs/**
+.github/**
+.gitignore
 node_modules/**
+.test-out/**
+test/**
+tsconfig.test.json
+scripts/**
+images/*.md
+prepare-for-github.sh
 FIXES.md
-CHANGELOG.md

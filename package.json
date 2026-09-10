@@ -2,7 +2,7 @@
   "name": "vscode-custom-llm-provider",
   "displayName": "Custom LLM Provider",
   "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, ...) to GitHub Copilot Chat in VS Code.",
-  "version": "0.5.4",
+  "version": "0.6.1",
   "publisher": "MartinRiha",
   "author": {
     "name": "Martin Riha",
@@ -61,6 +61,14 @@
         "title": "Custom LLM: Manage providers"
       },
       {
+        "command": "custom-llm.manageModels",
+        "title": "Custom LLM: Manage models"
+      },
+      {
+        "command": "custom-llm.setReasoningEffort",
+        "title": "Custom LLM: Set reasoning effort"
+      },
+      {
         "command": "custom-llm.refreshModels",
         "title": "Custom LLM: Refresh model list from API"
       },
@@ -106,26 +114,97 @@
         "customLlm.models": {
           "type": "array",
           "default": [],
-          "markdownDescription": "Auto-populated by model discovery. Each item: `{ id, name, providerId, maxInputTokens, maxOutputTokens }`.\n\n`maxOutputTokens` is sent as `max_tokens` on every request. Reasoning models spend it on their chain of thought before answering, so raise it (32768+) if a model returns empty content. A value you set by hand is kept across model refreshes.\n\nOptional `imageInput` marks whether the model accepts images. It is only set automatically when the endpoint reports it; otherwise models are assumed to be vision-capable. Set `\"imageInput\": false` on a text-only model to stop VS Code sending it images.\n\nOptional `hidden` keeps a model out of the Copilot model picker without deleting it — deleting is undone by the next refresh, `\"hidden\": true` is not. Non-chat models (text-to-speech, image, video, embedding, rerank) are hidden automatically when the endpoint reports a mode; set `\"hidden\": false` to bring one back."
+          "markdownDescription": "Auto-populated by model discovery. Configure entries through **Custom LLM: Manage models**. Models are identified internally by `providerId + id`, so equal upstream IDs from different providers can coexist.\n\n`maxOutputTokens` is sent as `max_tokens`. User-edited fields survive refreshes.\n\nOptional `imageInput` and `toolCalling` override detected capabilities. Unknown capabilities default to disabled; enable them explicitly when the endpoint does not publish metadata.\n\nOptional `hidden` keeps a model out of the picker without deleting it.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "providerId",
+              "maxInputTokens",
+              "maxOutputTokens"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Exact model ID sent to the upstream API."
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name in the model picker."
+              },
+              "providerId": {
+                "type": "string",
+                "description": "Stable provider slug."
+              },
+              "maxInputTokens": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Input-only budget reported to VS Code. Derived from contextWindow minus maxOutputTokens when contextWindow is set."
+              },
+              "maxOutputTokens": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "contextWindow": {
+                "type": "integer",
+                "minimum": 2,
+                "description": "Optional total input + output capacity. Must exceed maxOutputTokens; the input budget is derived automatically."
+              },
+              "imageInput": {
+                "type": "boolean",
+                "description": "Explicit image-input override."
+              },
+              "toolCalling": {
+                "type": "boolean",
+                "description": "Explicit tool-calling override."
+              },
+              "hidden": {
+                "type": "boolean",
+                "description": "Hide the model from the picker."
+              },
+              "thinkingEffort": {
+                "type": "string",
+                "description": "Per-model reasoning override. auto uses the provider default; omit to inherit customLlm.thinkingEffort. Use Custom LLM: Set reasoning effort to configure it.",
+                "enum": [
+                  "auto",
+                  "off",
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            }
+          }
         },
         "customLlm.thinkingEffort": {
           "type": "string",
           "enum": [
             "auto",
             "off",
+            "minimal",
             "low",
             "medium",
-            "high"
+            "high",
+            "xhigh",
+            "max"
           ],
           "enumDescriptions": [
             "Do not send any thinking parameter — let the model use its default.",
-            "Disable thinking (Qwen: enable_thinking=false; others: reasoning_effort=low).",
+            "Disable thinking where supported. Models such as GLM-5.3 fall back to their lowest supported effort with a warning.",
+            "Use the smallest supported reasoning budget.",
             "Light reasoning pass (Qwen: thinking_budget=1024; others: reasoning_effort=low).",
             "Medium reasoning pass (Qwen: thinking_budget=8192; others: reasoning_effort=medium).",
-            "Full reasoning pass (Qwen: thinking_budget=32768; others: reasoning_effort=high)."
+            "Full reasoning pass (Qwen: thinking_budget=32768; others: reasoning_effort=high).",
+            "Extra-high reasoning where supported.",
+            "Maximum reasoning supported by the model."
           ],
           "default": "auto",
-          "markdownDescription": "Global default for how much the model 'thinks' before answering.\n\n- `auto` — send no parameter; the model decides.\n- `off` — explicitly disable thinking.\n- `low / medium / high` — progressively deeper reasoning.\n\nPer-model override: add `\"thinkingEffort\": \"<value>\"` to the model entry in `customLlm.models`.\n\nThe value is translated to the provider-specific API field automatically:\n- Qwen3 / DashScope → `enable_thinking` + `thinking_budget`\n- OpenAI o-series, DeepSeek-V4, GPT-5 → `reasoning_effort`\n- All others → silently ignored."
+          "markdownDescription": "Global fallback for reasoning depth. Run **Custom LLM: Set reasoning effort** for a model-specific value. Recent VS Code versions can also show a Reasoning effort option in the model picker.\n\nPriority: request override → model picker → per-model setting → this global setting. An explicit `auto` sends no reasoning override.\n\nThe extension translates values through model adapters:\n- Qwen → `enable_thinking` + `thinking_budget`\n- GLM-5.3 → `thinking.type=enabled` + `reasoning_effort` (`low`, `high`, `max`)\n- OpenAI o-series, DeepSeek-V4, GPT-5 → `reasoning_effort`\n\nThe selected value and its source are logged in the Custom LLM output channel."
         },
         "customLlm.baseUrl": {
           "type": "string",
@@ -143,11 +222,15 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
+    "typecheck": "tsc -p ./ --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test .test-out/test/*.test.js",
+    "package": "vsce package --no-dependencies",
     "watch": "tsc -watch -p ./"
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
     "@types/vscode": "^1.119.0",
+    "@vscode/vsce": "^3.9.2",
     "typescript": "^6.0.3"
   }
 }

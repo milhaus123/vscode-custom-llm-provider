@@ -5,50 +5,19 @@ Works out of the box with **Alibaba DashScope (Qwen)**, **MiniMax**, **OpenRoute
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.119%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.5.4-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.1-brightgreen)](CHANGELOG.md)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=github-sponsors)](https://github.com/sponsors/milhaus123)
 
 ---
 
-## 🆕 What's New in v0.5.4
+## 🆕 What's New in v0.6.1
 
-- **Thinking / reasoning effort control** — a new `customLlm.thinkingEffort` setting (`auto` | `off` | `low` | `medium` | `high`, default `auto`) controls how deeply a model reasons before answering. Add `"thinkingEffort": "<value>"` to a `customLlm.models` entry for a per-model override.
-  - **Qwen / DashScope** (`qwen*`) → `enable_thinking` + `thinking_budget` (1 024 / 8 192 / 32 768 tokens for low / medium / high)
-  - **OpenAI o-series, DeepSeek-V4, GPT-5** → `reasoning_effort: "low" | "medium" | "high"`
-  - **All other providers** → silently ignored
-
-See the [changelog](CHANGELOG.md) for complete release notes.
-
----
-
-## 🆕 What's New in v0.5.3
-
-- **Hide models from the picker** — set `"hidden": true` on an entry in `customLlm.models`. Unlike deleting it, which the next refresh undoes, a hidden model stays hidden.
-- **Non-chat models filtered automatically** — text-to-speech, image, video, embedding and rerank models are hidden on first discovery when the endpoint reports a mode (LiteLLM). Your own choice always wins on later refreshes.
-
-See the [changelog](CHANGELOG.md) for complete release notes.
-
----
-
-## 🆕 What's New in v0.5.2
-
-- **`maxOutputTokens` finally works** — requests were capped at 8192 no matter what the setting said, which left reasoning models returning empty content. The configured value is now sent as-is.
-- **Token limits read correctly from proxies** — `max_output_tokens` from LiteLLM's `/model/info` is picked up, and namespaced IDs such as `tensorix/z-ai/glm-5.2` match the built-in limits table instead of silently falling back to 8192.
-- **Refreshes no longer reset hand-tuned limits** — a value you set by hand survives model discovery.
-- **Clearer empty-response diagnostics** — the warning reports the `max_tokens` actually sent instead of the configured value.
-
-See the [changelog](CHANGELOG.md) for complete release notes.
-
----
-
-## 🆕 What's New in v0.5.1
-
-- **Tool-result images now reach multimodal models** — screenshots and other images returned by tools are forwarded in a compatible follow-up message instead of being dropped.
-- **Mixed tool results are preserved** — textual and JSON data returned alongside tool calls are decoded and sent to the model.
-- **More accurate vision errors** — unrelated `400` responses are no longer misreported as missing image support.
-- **Per-model vision control** — set `"imageInput": false` on a text-only model; LiteLLM's `supports_vision` metadata is detected automatically.
-- **Better diagnostics** — request logs show whether image content was sent.
+- **Easier reasoning controls** — run **Custom LLM: Set reasoning effort**, select your model, and choose a supported level. Compatible VS Code 1.122+ hosts also receive options for the native model picker.
+- **Correct system messages** — instructions received from VS Code retain the `system` role instead of being converted into assistant history.
+- **Explicit total context** — set `contextWindow` to reserve the output budget inside a total limit. Existing `maxInputTokens` settings keep their input-only meaning.
+- **Clearer failure diagnostics** — retry logs include attempt counts and server request IDs when available; upstream connection errors point to proxy/model-server logs.
+- **Regression coverage** — tests verify actual provider registration and serialized requests, reasoning precedence, context budgets, cancellation, and stream failure status.
 
 See the [changelog](CHANGELOG.md) for complete release notes.
 
@@ -60,7 +29,9 @@ This extension was developed primarily to bring **[Alibaba Cloud Coding Plan](ht
 
 Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder** models in full agent mode — editing files, running tests, searching your codebase — all from within GitHub Copilot Chat. This extension bridges the gap by exposing those models directly in the VS Code model picker.
 
-![Alibaba Coding Plan connected to VS Code through Custom LLM Provider](images/alibaba-coding-plan.png)
+![Illustrated connection flow: an endpoint connects through Custom LLM Provider to VS Code Chat; API keys are stored in SecretStorage](images/alibaba-coding-plan.png)
+
+*The visuals in this guide illustrate the v0.6 series. They are not VS Code screenshots or live endpoint test results; command names and details below reflect the current version.*
 
 ---
 
@@ -69,13 +40,14 @@ Alibaba's Coding Plan feature in Model Studio lets you run powerful **Qwen Coder
 - Models appear directly in the **Copilot Chat model picker** — no extra setup
 - **`@qwen` chat participant** (opt-in) — type `@qwen` in any chat turn to route just that message through your custom model
 - **Multi-provider support** — connect Alibaba DashScope, MiniMax, OpenRouter, and any other provider simultaneously, each with its own URL and API key
+- **Collision-safe model IDs** — two providers may expose the same upstream model ID without overwriting each other
 - **Secure API key storage** — keys are kept in VS Code's encrypted `SecretStorage` instead of provider settings
 - **Dynamic model discovery** — models are fetched automatically from each provider's `/v1/models` (or `/model/info` for LiteLLM-compatible endpoints) on startup
 - **Stable provider IDs** — providers are identified by a human-readable slug (e.g. `alibaba-dashscope`), so renaming or changing a provider's URL never breaks the model list
-- **Image input support** — attach images directly in Copilot Chat (requires a multimodal model such as `qwen-vl-max`)
+- **Capability-aware image input** — attach images only to models that report, inherit, or explicitly enable vision support
 - **Tool-result image support** — screenshots and other images returned by tools are forwarded to multimodal models
 - Full streaming support (Server-Sent Events)
-- **Tool calling support** — agent mode, `/fix`, `/edit`, `@workspace` all work
+- **Capability-aware tool calling** — agent mode, `/fix`, `/edit`, and `@workspace` are enabled only for compatible models
 - **Automatic retry with exponential backoff** for network failures and rate limits
 - Hot-reload on settings change — no restart needed
 - Zero runtime dependencies
@@ -95,13 +67,13 @@ The wizard will ask for:
 
 1. **Provider name** — e.g. `Alibaba DashScope`
 2. **Base URL** — e.g. `https://coding-intl.dashscope.aliyuncs.com/v1`
-3. **API key** — your `sk-…` key
+3. **API key** — your `sk-…` key, or empty for an unauthenticated local endpoint
 
 After saving, the extension automatically fetches available models from the provider.
 
 The API key is stored in VS Code's encrypted secret storage, not in your user or workspace `settings.json`.
 
-![Secure provider and API key management](images/settings.png)
+![Illustrated Command Palette setup: Add provider stores the key in SecretStorage; Manage models saves capabilities and limits per model](images/settings.png)
 
 > **Get your API key** from [Alibaba Cloud Model Studio](https://modelstudio.console.alibabacloud.com) → API Keys section.  
 > Note that Coding Plan API keys are separate from regular DashScope keys.
@@ -112,20 +84,24 @@ Open Copilot Chat (`Ctrl+Alt+I`) → click the model name → your models appear
 
 > **First time only:** Open `Ctrl+Shift+P` → **Chat: Manage Language Models** → hover over each model → click the **eye icon 👁** to enable it in the picker.
 
-![Current VS Code Chat model picker with Custom LLM models](images/model-picker.png)
+Check capabilities in **Custom LLM: Manage models**. For example, the extension's `zai-org/GLM-5.3` profile enables text and tool calling, disables image input, and offers `low`, `high`, or `max` thinking effort. Endpoint metadata or explicit overrides can change the resolved capabilities. The same upstream model ID at two providers remains two separate choices.
+
+![Illustrated GLM-5.3 profile: text and tools enabled, images disabled, low/high/max reasoning; identical model IDs remain separate across providers](images/model-picker.png)
 
 ### 3. Use the `@qwen` participant (optional)
 
 Type `@qwen` at the start of a message to route **that single turn** through your custom model — regardless of which model is selected in the picker.
 
 ```text
-@qwen explain the auth flow in this codebase
-@qwen qwen3-coder-plus refactor this function
+@qwen explain this pasted function: ...
+@qwen qwen3-coder-plus summarize this pasted code: ...
 ```
 
 > **Per-turn, not sticky:** since v0.4.5 the participant is **not sticky** — you have to type `@qwen` every time you want it. Without `@qwen`, the message goes to whatever model you picked in the model picker (including original GitHub Copilot models like GPT-4 or Claude). This prevents the participant from accidentally hijacking native Copilot turns. If you want to always use your custom model, select it in the picker instead.
 
-![Using the non-sticky @qwen chat participant in VS Code Chat](images/qwen-participant.png)
+The participant forwards your **plain-text prompt and text history**. It does not forward file attachments, images, or tool results, and it does not run an agent tool loop. For those workflows, select a compatible custom model in the **model picker** instead.
+
+![Illustrated routing comparison: the model picker supports ongoing work and compatible tools/images; @qwen handles one text-only turn](images/qwen-participant.png)
 
 ---
 
@@ -146,7 +122,7 @@ Type `@qwen` at the start of a message to route **that single turn** through you
 
 ## 🔌 Multi-Provider Support
 
-You can connect **multiple providers at once** — for example, use Alibaba DashScope and OpenRouter side by side. Each provider has its own URL and API key; models from all providers are merged into a single list in the Copilot Chat picker.
+You can connect **multiple providers at once** — for example, use Alibaba DashScope and OpenRouter side by side. Each provider has its own URL and API key; models from all providers are merged into a single list in the Copilot Chat picker. Internally, the extension identifies a model by `providerId + upstream model ID`, so providers can safely expose the same ID.
 
 **Add a provider:**
 
@@ -158,6 +134,12 @@ Ctrl+Shift+P → Custom LLM: Add provider
 
 ```text
 Ctrl+Shift+P → Custom LLM: Manage providers
+```
+
+**Manage model capabilities and limits:**
+
+```text
+Ctrl+Shift+P → Custom LLM: Manage models
 ```
 
 **Refresh the model list:**
@@ -232,19 +214,24 @@ Existing provider entries without an `id` are upgraded automatically. Legacy `cu
 
 ### Model list
 
-`customLlm.models` is auto-populated by model discovery and does not normally need to be edited manually. The extension merges discovered models with any existing entries — custom entries are preserved.
+`customLlm.models` is auto-populated by model discovery and does not normally need to be edited manually. Use **Custom LLM: Manage models** for common changes. Discovery merges by provider plus upstream model ID, and existing overrides win over newly reported metadata.
 
 | Field | Description |
 | ----- | ----------- |
 | `id` | Model identifier sent to the provider |
 | `name` | Display name shown in the model picker |
 | `providerId` | Stable provider slug referenced by the model |
-| `maxInputTokens` | Maximum input context reported to VS Code |
+| `maxInputTokens` | Input-only token limit reported to VS Code, unless `contextWindow` is set |
 | `maxOutputTokens` | Output budget — reported to VS Code and sent as `max_tokens` on every request |
-| `imageInput` | Optional vision override; use `false` for a text-only model |
+| `contextWindow` | Optional total input + output limit; input is calculated as this value minus `maxOutputTokens` |
+| `imageInput` | Optional vision override; `true` enables and `false` disables image input |
+| `toolCalling` | Optional tool-calling override for agent mode |
 | `hidden` | Optional; `true` keeps the model out of the Copilot model picker |
+| `thinkingEffort` | Optional per-model reasoning level; omit to inherit the global setting, or use `auto` for the provider default |
 
-When `imageInput` is omitted, the model is treated as image-capable because the standard OpenAI-compatible `/models` response does not advertise vision support. LiteLLM-compatible `/model/info` responses can set this automatically through `supports_vision`.
+The extension first uses an explicit model value, then endpoint metadata, then its known-model profile. An unknown capability is disabled. LiteLLM `/model/info` can report `supports_vision` and `supports_function_calling`; some richer `/models` responses expose input modalities and supported parameters. Use **Manage models** when a generic endpoint does not publish this metadata.
+
+If an upstream server rejects an actual image request, the extension records `imageInput: false`, refreshes the model registration, and does not retry the invalid request.
 
 #### Hiding models from the picker
 
@@ -267,6 +254,27 @@ Hide rather than delete: a deleted entry is added back by the next model refresh
 
 Endpoints that report a model's mode — LiteLLM's `/model/info` — get this for free: models whose `mode` is not `chat` or `completion`, and deployments the proxy marks as `blocked`, are hidden the first time they are discovered. Only the first time: once an entry exists, the flag is yours, so unhiding one is never undone by a refresh. Plain OpenAI-compatible `/models` responses (Alibaba DashScope among them) carry no mode at all, so nothing is hidden automatically there — set the flag by hand.
 
+#### Total context versus input budget
+
+`maxInputTokens` is an **input-only** allowance. If you mean a total capacity of 1,000,000 tokens, set `contextWindow` instead. The extension reserves `maxOutputTokens` within that total:
+
+```json
+{
+  "id": "zai-org/GLM-5.3",
+  "name": "Zai Org/GLM 5 3",
+  "providerId": "custom-alza",
+  "contextWindow": 1000000,
+  "maxInputTokens": 983616,
+  "maxOutputTokens": 16384
+}
+```
+
+The input limit is derived from `contextWindow`, even if the stored `maxInputTokens` differs. Changing the output budget therefore keeps the same total. The total must be a whole number greater than the output budget; use the actual capacity of your deployment, not a value inferred from its model name.
+
+You can configure these values through **Custom LLM: Manage models → Total context window (input + output)**. Choosing **Maximum input tokens** clears an explicit total and restores input-only configuration. The model tooltip and **Custom LLM** output channel show the exact input, output, and total counts.
+
+**Why could 1M appear as 2M?** VS Code 1.122's picker tooltip adds input and output, then rounds large totals upward to whole millions. Thus `1000000 + 16384 = 1016384` displays as `2M`; it does not grant the model two million tokens. The configuration above makes the sum exactly `1M`. See the [VS Code 1.122 picker formatter](https://github.com/microsoft/vscode/blob/1.122.0/src/vs/workbench/contrib/chat/browser/widget/input/chatModelPicker.ts#L1505).
+
 #### Output budget and reasoning models
 
 `maxOutputTokens` is sent verbatim as `max_tokens`. Reasoning models (GLM, Qwen thinking modes, DeepSeek-R1, QwQ …) spend that budget on their chain of thought before writing any answer, so a budget that is too small produces a reply with no content at all. If **View → Output → Custom LLM** shows
@@ -277,7 +285,30 @@ Endpoints that report a model's mode — LiteLLM's `/model/info` — get this fo
 
 raise `maxOutputTokens` for that model; 32768 or more suits most reasoning models. The request log line shows the value actually sent as `max_tokens=…`.
 
-Discovery fills the field in from the endpoint when it reports one — `max_output_tokens` or `max_tokens` from LiteLLM's `/model/info`, `max_completion_tokens` or `context_length` from `/models`. When the endpoint reports nothing, a value you set by hand is kept as-is across refreshes; only models the extension has never seen a limit for fall back to a built-in guess.
+Discovery fills the field in from the endpoint when it reports one — `max_output_tokens` or `max_tokens` from LiteLLM's `/model/info`, `max_completion_tokens` or `context_length` from `/models`. Existing values and overrides survive later refreshes; only a newly discovered model with no reported limit falls back to a built-in guess.
+
+#### Thinking and reasoning effort
+
+Open the Command Palette and select a level without editing JSON:
+
+```text
+Ctrl+Shift+P → Custom LLM: Set reasoning effort → <model> → Low / High / Max
+```
+
+The available levels depend on the model. For `zai-org/GLM-5.3`, choose **Low**, **High**, or **Max**. The same control is available through **Custom LLM: Manage models → Reasoning effort (thinking)**.
+
+VS Code renders the native controls, but the extension must supply their options and translate the selected value into API parameters. On compatible **VS Code 1.122+** hosts, look for an effort button or a configuration/gear menu associated with the selected model; its placement depends on the Chat UI. This integration uses VS Code's evolving optional `chatProvider` configuration channel. If no native control appears, the Command Palette command remains available on every supported VS Code version. See the [VS Code configuration schema](https://github.com/microsoft/vscode/blob/1.122.0/src/vscode-dts/vscode.proposed.chatProvider.d.ts).
+
+Selection priority is **request override → native model picker → per-model `thinkingEffort` → global `customLlm.thinkingEffort`**. In the native picker, choose **Use extension setting** to use the command/settings value again. In the command, **Use global setting** removes the per-model override. **Provider default (auto)** is different: it explicitly sends no reasoning parameters, even when the global setting is `high`.
+
+Namespaced IDs are normalized before selecting an adapter, while the original model ID is still sent upstream. **View → Output → Custom LLM** logs the selected effort, its source, and the translated parameters for each request.
+
+| Model family | Request fields | Supported behavior |
+| ------------ | -------------- | ------------------ |
+| Qwen | `enable_thinking`, `thinking_budget` | Off through max budget |
+| GLM-5.3 | `thinking.type`, `reasoning_effort` | `low`, `high`, `max`; thinking cannot be disabled |
+| OpenAI o-series, GPT-5, DeepSeek-V4 | `reasoning_effort` | `low`, `medium`, `high` |
+| Unknown family | None | A warning is logged; no guessed parameter is sent |
 
 > **Editing over Remote SSH:** `customLlm.models` is a user setting, so it lives on whichever machine runs the extension host. In a Remote SSH window that is the **remote** host — edit it there, not in your local `settings.json`.
 
@@ -307,6 +338,8 @@ If no providers are configured and the model list is empty, the extension adds t
 | ------- | ----------- |
 | `Custom LLM: Add provider` | Guided wizard to add a new provider (name → URL → API key → auto-discover models) |
 | `Custom LLM: Manage providers` | List, edit, or remove configured providers |
+| `Custom LLM: Manage models` | Configure image input, tool calling, reasoning, input/output/total limits, and picker visibility |
+| `Custom LLM: Set reasoning effort` | Select a model and its reasoning depth, global inheritance, or provider default |
 | `Custom LLM: Refresh model list from API` | Manually re-fetch models from all configured providers |
 | `Custom LLM: Test connection` | Send a test request to each configured provider and report the result |
 
@@ -330,7 +363,7 @@ The extension automatically retries failed requests with **exponential backoff**
 | 2nd | ~2 seconds | Same as above |
 | 3rd | ~4 seconds | Same as above |
 
-Maximum delay capped at 10 seconds. Request cancellation is never retried.
+Maximum delay is capped at 10 seconds. Network failures and HTTP `408` are also retried; permanent `400/401/403` failures are not. Cancellation interrupts retry backoff and is never retried. There are at most four attempts (one initial request plus three retries), recorded in **View → Output → Custom LLM**.
 
 ---
 
@@ -339,10 +372,22 @@ Maximum delay capped at 10 seconds. Request cancellation is never retried.
 - **GitHub Copilot Coding Plan** (GitHub's native multi-step agent mode) is tied to GitHub's own infrastructure and cannot use custom providers. Use [Alibaba Cloud Coding Plan](https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=coding-plan#/efm/coding-plan-index) as a powerful alternative.
 - **Inline completions** (ghost text) are provided by GitHub Copilot and cannot be redirected
 - Models only appear in the picker on **individual GitHub Copilot plans** (not Business/Enterprise)
+- VS Code's extension-provider API does not currently expose a supported channel for reporting upstream token usage to the Chat UI. Usage remains available in **View → Output → Custom LLM**.
+- Native reasoning controls use an evolving optional VS Code API and may not appear in every host/UI. **Custom LLM: Set reasoning effort** and global/per-model settings remain the fallback.
 
 ---
 
 ## 🛠️ Troubleshooting
+
+### I cannot find reasoning effort
+
+Install v0.6.1 or later, reload the VS Code window, and run **Custom LLM: Set reasoning effort** from `Ctrl+Shift+P`. Select the correct model/provider pair. If you previously selected a value in the native picker, return it to **Use extension setting** so it no longer overrides the command's value. The request log confirms the effective selection and its source.
+
+### LiteLLM returns 500: "Connection error"
+
+This response means the endpoint reports a connection failure toward its upstream service; it does not identify the underlying server-side cause. The extension retries transient failures, but cannot repair an unavailable model server or a proxy routing/network problem. Check the proxy and model-server logs at the request timestamp, using the upstream request ID from **Custom LLM** output when one was returned. VS Code's **Client Request Id** is a separate identifier.
+
+Version 0.6.1 also fixes a separate request-conversion bug: VS Code system instructions were previously sent as assistant history. A `500` response alone does not establish that this bug caused the outage. If the failure persists after updating, server-side logs are still needed.
 
 ### Models lose their provider after changing a provider's URL (pre-v0.5.0)
 
@@ -397,17 +442,21 @@ The extension hot-reloads on settings change, but it may take a few seconds. If 
 
 ### Inspect request diagnostics
 
-Open **View → Output** and select **Custom LLM**. Each request includes the selected model, timing, streamed content and tool-call counts, finish reason, and whether images were included. Token usage is logged as structured JSON when the provider reports it.
+Open **View → Output** and select **Custom LLM**. Each request includes the selected model, reasoning effort and its source, timing, streamed content and tool-call counts, finish reason, and whether images were included. Retries include the next attempt number, delay, HTTP status, and upstream request ID when available. Token usage is logged as structured JSON when the provider reports it.
 
 ### Image attachment returns an error
 
-Not all models support image input. If you see `"This model does not support image input"`, switch to a multimodal model. For Alibaba DashScope, `qwen-vl-max` supports vision. Coding-focused models (`qwen3-coder-*`, `qwen3.6-plus`, etc.) are text-only.
+Not all models support image input. If you see `"This model does not support image input"`, switch to a multimodal model. The extension marks a model text-only after a confirmed upstream rejection so later requests do not repeat the same failure.
 
-Because an OpenAI-compatible endpoint doesn't generally advertise vision support, every model is offered to VS Code as image-capable unless the endpoint says otherwise (LiteLLM's `/model/info` reports `supports_vision`). To stop VS Code sending images to a model you know is text-only, set `"imageInput": false` on its entry in `customLlm.models` — the flag survives model refreshes.
+Generic OpenAI-compatible `/models` responses often omit vision metadata. Unknown models therefore default to text-only. Run **Custom LLM: Manage models → Image input → Enabled** only when you know the selected model accepts images. An explicit choice survives model refreshes.
+
+### Agent mode is unavailable for a model
+
+Tool calling is advertised only when endpoint metadata, a known model profile, or your override enables it. For an otherwise compatible model whose endpoint omits capability metadata, run **Custom LLM: Manage models → Tool calling → Enabled**.
 
 ### The model says it cannot see a screenshot from a tool
 
-Images returned by tools (`#browser/screenshotPage` and similar) are forwarded to the model as a separate message right after the tool result, because the OpenAI chat schema only accepts plain text in a `tool` message. If the model still reports it cannot see the image, check **View → Output → Custom LLM**: the request line shows `images=yes` when image content was actually sent. If it shows `images=no`, VS Code never handed the image to the extension — verify the model's `imageInput` flag isn't set to `false`.
+Images returned by tools (`#browser/screenshotPage` and similar) are forwarded to the model as a separate message right after the tool result, because the OpenAI chat schema only accepts plain text in a `tool` message. If the model still reports it cannot see the image, check **View → Output → Custom LLM**: the request line shows `images=yes` when image content was actually sent. If it shows `images=no`, verify the model's resolved vision capability in **Custom LLM: Manage models**.
 
 ### Migrating from v0.4.x or earlier
 

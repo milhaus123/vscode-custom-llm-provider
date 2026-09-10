@@ -48,7 +48,9 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     environment: production  # Requires manual approval in GitHub Settings
-    if: needs.verify.outputs.version_match == 'true'
+    if: needs.verify.outputs.version_match == 'true' && needs.verify.outputs.is_owner == 'true'
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -62,14 +64,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify release creator
-        if: needs.verify.outputs.is_owner != 'true'
-        run: |
-          echo "⚠️ WARNING: Release was created by ${{ github.event.release.author.login }}"
-          echo "Proceeding because version verification passed, but this will be logged."
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Package extension
+        run: npm run package
 
       - name: Publish to VS Code Marketplace
-        run: npx vsce publish -p ${{ secrets.VSCE_PAT }}
+        run: npx vsce publish --packagePath *.vsix -p ${{ secrets.VSCE_PAT }}
 
       - name: Upload VSIX to GitHub Release
         run: |
