@@ -5,9 +5,17 @@ Works out of the box with **Alibaba DashScope (Qwen)**, **MiniMax**, **OpenRoute
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.119%2B-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=MartinRiha.vscode-custom-llm-provider)
-[![Version](https://img.shields.io/badge/version-0.6.1-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.2-brightgreen)](CHANGELOG.md)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/martinriha)
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=github-sponsors)](https://github.com/sponsors/milhaus123)
+
+---
+
+## 🆕 What's New in v0.6.2
+
+- **Fixed: tool calls with empty arguments on non-standard gateways.** Some OpenAI-compatible endpoints (e.g. Gloo AI / Anthropic models via `/ai/v2/guarded`) set `finish_reason: "tool_calls"` on every streamed chunk — including the very first one, before any argument fragments arrive. The extension was finalizing and returning early, reporting the tool call with empty `{}` input, causing `must have required property` errors. Finalization now always happens at `[DONE]` or EOF, where all argument fragments have accumulated.
+
+See the [changelog](CHANGELOG.md) for complete release notes.
 
 ---
 

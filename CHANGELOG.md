@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.2 — September 2026
+
+### Bug fixes
+
+- **Fixed: tool calls with empty arguments on non-standard gateways.** Some OpenAI-compatible endpoints (e.g. Gloo AI / Anthropic models via `/ai/v2/guarded`) set `finish_reason: "tool_calls"` on every streamed chunk — including the very first one, before any `function.arguments` fragments have arrived. The extension was finalizing and returning on the first such chunk, discarding all subsequent argument fragments and reporting the tool call with an empty `{}` input. This caused immediate failures for any tool with required parameters (e.g. `must have required property 'filePath'`) and logged `argsChars=0` in the output channel. The early-return on `finish_reason` has been removed; finalization now always happens at `[DONE]` or EOF, where all fragments have accumulated, consistent with the existing behavior for compliant providers.
+
+---
+
 ## v0.6.1 — September 10, 2026
 
 ### Reasoning controls

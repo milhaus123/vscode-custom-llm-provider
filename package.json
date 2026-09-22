@@ -2,14 +2,14 @@
   "name": "vscode-custom-llm-provider",
   "displayName": "Custom LLM Provider",
   "description": "Connect any OpenAI-compatible endpoint (Alibaba Qwen / DashScope, OpenRouter, ...) to GitHub Copilot Chat in VS Code.",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "publisher": "MartinRiha",
   "author": {
     "name": "Martin Riha",
     "url": "https://github.com/milhaus123"
   },
   "engines": {
-    "vscode": "^1.119.0"
+    "vscode": "^1.120.0"
   },
   "categories": [
     "AI",
@@ -83,7 +83,7 @@
         "customLlm.providers": {
           "type": "array",
           "default": [],
-          "markdownDescription": "List of OpenAI-compatible providers. Each item: `{ id, name, baseUrl }`.\n\nAPI keys are **not** stored here — they live in VS Code's encrypted secret storage. Use the command **Custom LLM: Manage providers** to set or change a key.",
+          "markdownDescription": "List of OpenAI-compatible providers. Each item: `{ id, name, baseUrl }`.\n\nAPI keys are **not** stored here \u2014 they live in VS Code's encrypted secret storage. Use the command **Custom LLM: Manage providers** to set or change a key.",
           "items": {
             "type": "object",
             "required": [
@@ -194,7 +194,7 @@
             "max"
           ],
           "enumDescriptions": [
-            "Do not send any thinking parameter — let the model use its default.",
+            "Do not send any thinking parameter \u2014 let the model use its default.",
             "Disable thinking where supported. Models such as GLM-5.3 fall back to their lowest supported effort with a warning.",
             "Use the smallest supported reasoning budget.",
             "Light reasoning pass (Qwen: thinking_budget=1024; others: reasoning_effort=low).",
@@ -204,7 +204,7 @@
             "Maximum reasoning supported by the model."
           ],
           "default": "auto",
-          "markdownDescription": "Global fallback for reasoning depth. Run **Custom LLM: Set reasoning effort** for a model-specific value. Recent VS Code versions can also show a Reasoning effort option in the model picker.\n\nPriority: request override → model picker → per-model setting → this global setting. An explicit `auto` sends no reasoning override.\n\nThe extension translates values through model adapters:\n- Qwen → `enable_thinking` + `thinking_budget`\n- GLM-5.3 → `thinking.type=enabled` + `reasoning_effort` (`low`, `high`, `max`)\n- OpenAI o-series, DeepSeek-V4, GPT-5 → `reasoning_effort`\n\nThe selected value and its source are logged in the Custom LLM output channel."
+          "markdownDescription": "Global fallback for reasoning depth. Run **Custom LLM: Set reasoning effort** for a model-specific value. Recent VS Code versions can also show a Reasoning effort option in the model picker.\n\nPriority: request override \u2192 model picker \u2192 per-model setting \u2192 this global setting. An explicit `auto` sends no reasoning override.\n\nThe extension translates values through model adapters:\n- Qwen \u2192 `enable_thinking` + `thinking_budget`\n- GLM-5.3 \u2192 `thinking.type=enabled` + `reasoning_effort` (`low`, `high`, `max`)\n- OpenAI o-series, DeepSeek-V4, GPT-5 \u2192 `reasoning_effort`\n\nThe selected value and its source are logged in the Custom LLM output channel."
         },
         "customLlm.baseUrl": {
           "type": "string",
@@ -229,7 +229,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
-    "@types/vscode": "^1.119.0",
+    "@types/vscode": "1.120.0",
     "@vscode/vsce": "^4.0.0",
     "typescript": "^7.0.2"
   }

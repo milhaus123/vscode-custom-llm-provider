@@ -807,11 +807,15 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
               }
             }
 
-            if (choice.finish_reason === 'tool_calls') {
-              reportPendingToolCalls('finish_reason');
-              logSummary(reqId, stats, startedAt, model, 'tool_calls');
-              return;
-            }
+            // Do NOT finalize on finish_reason here.
+            // Some providers (e.g. Gloo AI / Anthropic gateway) set
+            // finish_reason:"tool_calls" on every chunk, including the very
+            // first one, before argument fragments have streamed in.
+            // Finalizing early discards all remaining argument chunks and
+            // reports empty tool-call inputs (argsChars=0).
+            // The existing [DONE] and EOF handlers fire after all fragments
+            // have accumulated and handle finalization correctly for all
+            // providers — compliant and non-compliant alike.
           } catch {
             stats.malformedChunks++;
           }
