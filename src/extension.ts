@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { CustomLlmProvider } from './provider';
+import { CustomLlmProvider, logLine } from './provider';
+import { stripTrailingSlashes } from './http';
 import { registerChatParticipant } from './participant';
 import { ApiKeyStore } from './secrets';
 import {
@@ -44,7 +45,7 @@ function toDisplayName(id: string): string {
 }
 
 function normalizeBaseUrl(value: string): string {
-  return value.trim().replace(/\/+$/, '');
+  return stripTrailingSlashes(value.trim());
 }
 
 function validateBaseUrl(value: string): string | undefined {
@@ -292,7 +293,7 @@ function reportedLimit(...values: Array<number | null | undefined>): number | un
 }
 
 async function fetchModelsForProvider(provider: ProviderConfig, apiKey: string): Promise<DiscoveredModel[] | null> {
-  const baseUrl = provider.baseUrl.replace(/\/+$/, '');
+  const baseUrl = stripTrailingSlashes(provider.baseUrl);
   const headers: Record<string, string> = {
     ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
   };
@@ -957,7 +958,7 @@ export function activate(context: vscode.ExtensionContext) {
     await discoverAllModels(apiKeys, true);
     await cleanupLegacyByokEntries();
     setTimeout(() => provider.notifyModelsChanged(), 2000);
-  })();
+  })().catch(err => logLine(`✗ startup sequence failed: ${err instanceof Error ? err.message : String(err)}`));
 
   const addProviderCmd = vscode.commands.registerCommand(
     'custom-llm.addProvider', () => cmdAddProvider(apiKeys, provider)
@@ -991,7 +992,8 @@ export function activate(context: vscode.ExtensionContext) {
       // A hand-edited settings.json may have re-introduced a plaintext key
       migrateApiKeysToSecretStorage(apiKeys)
         .then(() => discoverAllModels(apiKeys, true))
-        .then(() => provider.notifyModelsChanged());
+        .then(() => provider.notifyModelsChanged())
+        .catch(err => logLine(`✗ reload after settings change failed: ${err instanceof Error ? err.message : String(err)}`));
     } else if (e.affectsConfiguration('customLlm.models')) {
       provider.notifyModelsChanged();
     }

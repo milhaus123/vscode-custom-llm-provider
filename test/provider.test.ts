@@ -51,7 +51,7 @@ function loadProvider(version = '1.122.0', responseFactory?: () => Response) {
   };
   const exports = {} as typeof providerModule;
   runInNewContext(readFileSync(filename, 'utf8'), {
-    exports, Buffer, TextDecoder, AbortController, Error, setTimeout, clearTimeout,
+    exports, Buffer, TextDecoder, AbortController, Error, setTimeout, clearTimeout, crypto,
     btoa: (value: string) => Buffer.from(value, 'binary').toString('base64'),
     require: (name: string) => {
       if (name === 'vscode') { return vscodeMock; }
