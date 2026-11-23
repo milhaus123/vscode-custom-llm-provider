@@ -128,6 +128,55 @@ The participant forwards your **plain-text prompt and text history**. It does no
 
 ---
 
+### Tsubasa
+
+Use Tsubasa through the extension's existing OpenAI-compatible connector.
+This configuration adds two text-only model choices.
+
+Add the following entries to your User Settings JSON, preserving any existing
+providers and models:
+
+```json
+{
+  "customLlm.providers": [
+    { "id": "tsubasa", "name": "Tsubasa", "baseUrl": "https://api.tsubasa.sh/v1" }
+  ],
+  "customLlm.models": [
+    {
+      "id": "tsubasa-fast",
+      "name": "Tsubasa Fast",
+      "providerId": "tsubasa",
+      "maxInputTokens": 32768,
+      "maxOutputTokens": 8192,
+      "contextWindow": 32768,
+      "imageInput": false,
+      "toolCalling": false,
+      "thinkingEffort": "off"
+    },
+    {
+      "id": "tsubasa-pro",
+      "name": "Tsubasa Pro",
+      "providerId": "tsubasa",
+      "maxInputTokens": 32768,
+      "maxOutputTokens": 16384,
+      "contextWindow": 32768,
+      "imageInput": false,
+      "toolCalling": false,
+      "thinkingEffort": "off"
+    }
+  ]
+}
+```
+
+Run **Custom LLM: Manage providers**, choose **Tsubasa**, and set its API key.
+The extension stores the key in SecretStorage. Select either model under **Custom LLM** in Copilot Chat. Image input and
+tool calling are disabled in this configuration.
+
+The 32,768-token total context includes output. `contextWindow` lets the
+extension reserve the configured output budget when advertising input limits.
+
+---
+
 ## 🔌 Multi-Provider Support
 
 You can connect **multiple providers at once** — for example, use Alibaba DashScope and OpenRouter side by side. Each provider has its own URL and API key; models from all providers are merged into a single list in the Copilot Chat picker. Internally, the extension identifies a model by `providerId + upstream model ID`, so providers can safely expose the same ID.
