@@ -10,6 +10,15 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxDelayMs: 10000,
 };
 
+/** Removes trailing "/" characters in linear time (no backtracking regex). */
+export function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) {
+    end--;
+  }
+  return value.slice(0, end);
+}
+
 export interface RetryEvent {
   nextAttempt: number;
   maxAttempts: number;

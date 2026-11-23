@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ApiKeyStore } from './secrets';
-import { DEFAULT_RETRY_CONFIG, VisionUnsupportedError, fetchWithRetry } from './http';
+import { DEFAULT_RETRY_CONFIG, VisionUnsupportedError, fetchWithRetry, stripTrailingSlashes } from './http';
 import {
   ModelConfig,
   buildThinkingParams,
@@ -516,7 +516,7 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
       throw new Error(msg);
     }
 
-    const baseUrl: string = provider.baseUrl.replace(/\/+$/, '');
+    const baseUrl: string = stripTrailingSlashes(provider.baseUrl);
     // Keys live in SecretStorage; `provider.apiKey` only still exists on a
     // hand-edited settings.json that startup migration has not swept up yet.
     const apiKey: string =
@@ -601,7 +601,8 @@ export class CustomLlmProvider implements vscode.LanguageModelChatProvider {
     const cancelDisposable = token.onCancellationRequested(() => abortController.abort());
     if (token.isCancellationRequested) { abortController.abort(); }
 
-    const reqId = Math.random().toString(36).slice(2, 8);
+    // Short id that ties together the log lines of one request.
+    const reqId = crypto.randomUUID().slice(0, 6);
     const stats = {
       contentChunks: 0,
       contentChars: 0,

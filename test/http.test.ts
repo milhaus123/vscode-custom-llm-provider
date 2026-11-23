@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HttpRequestError, RetryEvent, VisionUnsupportedError, fetchWithRetry } from '../src/http';
+import { HttpRequestError, RetryEvent, VisionUnsupportedError, fetchWithRetry, stripTrailingSlashes } from '../src/http';
 
 const noDelay = { maxRetries: 3, initialDelayMs: 0, maxDelayMs: 0 };
 
@@ -113,4 +113,12 @@ test('cancellation interrupts retry backoff without another HTTP attempt', async
     (error: unknown) => error instanceof Error && error.name === 'AbortError');
     assert.equal(calls, 1);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('stripTrailingSlashes removes only trailing slashes', () => {
+  assert.equal(stripTrailingSlashes('https://api.test/v1///'), 'https://api.test/v1');
+  assert.equal(stripTrailingSlashes('https://api.test/v1'), 'https://api.test/v1');
+  assert.equal(stripTrailingSlashes('///'), '');
+  assert.equal(stripTrailingSlashes(''), '');
+  assert.equal(stripTrailingSlashes('a/'.repeat(50_000) + 'b'), 'a/'.repeat(50_000) + 'b');
 });
